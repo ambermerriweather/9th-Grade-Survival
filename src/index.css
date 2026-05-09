@@ -31,4 +31,27 @@
   .card-title {
     @apply font-display text-lg sm:text-xl font-bold text-gray-900;
   }
+
+  /* Markdown content renderer styles */
+  .md-content .md-h1 { font-size: 1.5rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.75rem; color: #111827; }
+  .md-content .md-h2 { font-size: 1.2rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #2B7A78; }
+  .md-content .md-h3 { font-size: 1rem; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0.4rem; color: #374151; }
+  .md-content .md-p { margin-bottom: 0.6rem; line-height: 1.65; color: #374151; }
+  .md-content .md-ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+  .md-content .md-li { margin-bottom: 0.25rem; line-height: 1.6; }
+  .md-content .md-hr { border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0; }
+  .md-content .md-gap { height: 0.5rem; }
+  .md-content .md-table-wrap { overflow-x: auto; margin: 1rem 0; }
+  .md-content .md-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  .md-content .md-th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.5rem 0.75rem; font-weight: 600; text-align: left; white-space: nowrap; }
+  .md-content .md-td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; vertical-align: top; }
+
+  /* Print styles */
+  @media print {
+    .no-print { display: none !important; }
+    header, nav { display: none !important; }
+    body { background: white !important; }
+    .print-card { break-inside: avoid; }
+    main { padding: 0 !important; }
+  }
 }
