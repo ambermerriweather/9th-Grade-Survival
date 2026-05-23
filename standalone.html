@@ -70,7 +70,7 @@ const { useState, useEffect, useRef } = React;
 /* ── FIREBASE CONFIG ─────────────────────────────────────────────────── */
 // Replace with your Firebase Realtime Database URL after setup
 // Get it at: console.firebase.google.com → your project → Realtime Database
-const FIREBASE_DB_URL = 'YOUR_FIREBASE_DATABASE_URL';
+const FIREBASE_DB_URL = 'https://scholars-vanguard-default-rtdb.firebaseio.com';
 const FB_ENABLED = typeof FIREBASE_DB_URL === 'string' && FIREBASE_DB_URL !== 'YOUR_FIREBASE_DATABASE_URL' && FIREBASE_DB_URL.startsWith('https://');
 
 const fbPath = (path) => `${FIREBASE_DB_URL}/${path}.json`;
