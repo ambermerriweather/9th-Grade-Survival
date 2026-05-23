@@ -67,6 +67,53 @@
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
+/* ── FIREBASE CONFIG ─────────────────────────────────────────────────── */
+// Replace with your Firebase Realtime Database URL after setup
+// Get it at: console.firebase.google.com → your project → Realtime Database
+const FIREBASE_DB_URL = 'YOUR_FIREBASE_DATABASE_URL';
+const FB_ENABLED = typeof FIREBASE_DB_URL === 'string' && FIREBASE_DB_URL !== 'YOUR_FIREBASE_DATABASE_URL' && FIREBASE_DB_URL.startsWith('https://');
+
+const fbPath = (path) => `${FIREBASE_DB_URL}/${path}.json`;
+
+const fbRead = async (path) => {
+  if (!FB_ENABLED) return null;
+  try {
+    const r = await fetch(fbPath(path));
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+};
+
+const fbWrite = async (path, data) => {
+  if (!FB_ENABLED) return;
+  try {
+    await fetch(fbPath(path), { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  } catch {}
+};
+
+const fbPatch = async (path, data) => {
+  if (!FB_ENABLED) return;
+  try {
+    await fetch(fbPath(path), { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  } catch {}
+};
+
+// Generate a unique student ID (stored in localStorage)
+const getStudentId = () => {
+  let id = localStorage.getItem('sv_student_id');
+  if (!id) {
+    id = 'stu_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+    localStorage.setItem('sv_student_id', id);
+  }
+  return id;
+};
+
+// Generate a 6-char class code
+const genClassCode = () => Math.random().toString(36).slice(2,8).toUpperCase();
+
+// Safe key for Firebase (no special chars)
+const safeKey = (s) => s.replace(/[.#$\/\[\]]/g, '_');
+
 /* ── ICONS ───────────────────────────────────────────────────────────── */
 const Svg = ({d,size=24,cls=""}) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size}
@@ -1461,6 +1508,74 @@ const BackNav = ({ onClick, label = "Back to Dashboard" }) => (
   </div>
 );
 
+/* ── STUDENT CLASS ENROLLMENT ────────────────────────────────────────── */
+const StudentEnrollment = ({ onDone }) => {
+  const [classCode, setClassCode] = useLS('sv_class_code', '');
+  const [studentName, setStudentName] = useLS('sv_student_name', '');
+  const [step, setStep] = useState(classCode ? 'done' : 'enroll');
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleJoin = async () => {
+    if (!studentName.trim()) { setError('Please enter your name.'); return; }
+    const code = classCode.trim().toUpperCase();
+    if (!code) { setError('Please enter a class code.'); return; }
+    setVerifying(true);
+    setError('');
+    if (FB_ENABLED) {
+      const info = await fbRead(`sv_classrooms/${code}/info`);
+      if (!info) { setError('Class code not found. Check with your teacher.'); setVerifying(false); return; }
+      const studentId = getStudentId();
+      await fbPatch(`sv_classrooms/${code}/students/${studentId}/profile`, {
+        name: studentName.trim(), joinedAt: new Date().toISOString(), lastActive: new Date().toISOString()
+      });
+    }
+    setClassCode(code);
+    setVerifying(false);
+    setStep('done');
+    onDone();
+  };
+
+  const handleSolo = () => {
+    setClassCode('SOLO');
+    onDone();
+  };
+
+  if (step === 'done') { onDone(); return null; }
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-md space-y-6">
+        <div className="text-center space-y-1">
+          <div className="bg-brand-pink text-white rounded-2xl w-12 h-12 flex items-center justify-center font-bold text-2xl mx-auto" style={{fontFamily:'Montserrat'}}>9</div>
+          <h2 className="font-black text-gray-900 text-xl mt-3" style={{fontFamily:'Montserrat'}}>Join Your Class</h2>
+          <p className="text-sm text-gray-500">Your teacher gave you a 6-character class code. Enter it below so your progress is shared with your teacher.</p>
+        </div>
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>}
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Your Name</label>
+            <input value={studentName} onChange={e=>setStudentName(e.target.value)} placeholder="First name or nickname" className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-teal" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Class Code</label>
+            <input value={classCode} onChange={e=>setClassCode(e.target.value.toUpperCase())} placeholder="e.g. ABC123" maxLength={6} className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest uppercase focus:outline-none focus:border-brand-teal" />
+          </div>
+        </div>
+        <button onClick={handleJoin} disabled={verifying} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50">
+          {verifying ? 'Verifying...' : 'Join Class'}
+        </button>
+        <button onClick={handleSolo} className="w-full text-gray-400 text-sm underline hover:text-gray-600">
+          Skip — study on my own (no class code)
+        </button>
+        {!FB_ENABLED && (
+          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 text-center">Firebase not configured yet. Your progress will save locally only.</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /* ── ROLE SELECT + TEACHER LOGIN ─────────────────────────────────────── */
 const RoleSelect = ({ onSelect }) => (
   <div className="min-h-screen flex flex-col" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
@@ -1909,6 +2024,7 @@ const JournalPrompts = ({ isTeacher }) => {
   const [view, setView] = useState('write');
   const [expandedId, setExpandedId] = useState(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [shareWithTeacher, setShareWithTeacher] = useState(false);
 
   const MIN_SENTENCES = 3;
   const PROMPT = "What is one thing you learned about your learning this week?";
@@ -1931,13 +2047,27 @@ const JournalPrompts = ({ isTeacher }) => {
       sentences: sentCount,
       mood: finalMood,
       moodSource: mood ? 'student' : 'detected',
+      shared: shareWithTeacher,
       grade: null,
       gradeNote: ''
     };
-    setEntries([entry, ...entries]);
-    setContent(''); setAiLog(''); setMood(null);
+    const updatedEntries = [entry, ...entries];
+    setEntries(updatedEntries);
+    setContent(''); setAiLog(''); setMood(null); setShareWithTeacher(false);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 2500);
+    // Sync to Firebase
+    if (FB_ENABLED) {
+      const code = localStorage.getItem('sv_class_code');
+      const sid = getStudentId();
+      if (code && code !== 'SOLO') {
+        const allMoods = updatedEntries.filter(e => e.mood != null).map(e => ({date: e.date, mood: e.mood, note: e.aiLog || ''}));
+        const allJournal = updatedEntries.map(e => ({date: e.date, text: e.content || e.text || '', mood: e.mood, shared: e.shared || false}));
+        fbWrite(`sv_classrooms/${code}/students/${sid}/moods`, allMoods);
+        fbWrite(`sv_classrooms/${code}/students/${sid}/journal`, allJournal);
+        fbPatch(`sv_classrooms/${code}/students/${sid}/profile`, {lastActive: new Date().toISOString()});
+      }
+    }
   };
 
   const downloadBlob = (blob, filename) => {
@@ -2140,6 +2270,12 @@ const JournalPrompts = ({ isTeacher }) => {
               <p className="text-[10px] text-gray-400">No selection = Smart Detection will be used ({getMood(suggestedMood).emoji} {getMood(suggestedMood).label})</p>
             )}
           </div>
+          {/* Share with teacher checkbox */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input type="checkbox" checked={shareWithTeacher} onChange={e=>setShareWithTeacher(e.target.checked)}
+              className="w-4 h-4 accent-brand-teal"/>
+            <span className="text-sm text-gray-600">Share this entry with my teacher</span>
+          </label>
           <button onClick={save} disabled={!canSave}
             className={`w-full py-3 rounded-xl font-semibold transition text-white ${canSave ? 'bg-brand-pink hover:opacity-90' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
             {savedFlash ? '✓ Entry Saved!' : 'Save Entry'}
@@ -2428,7 +2564,20 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
             {reflValid&&!done&&(
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-2 text-brand-teal font-bold">⭐ Reflection complete! You're ready to mark this lesson done.</div>
-                <button onClick={()=>setDone(true)} className="w-full bg-brand-teal text-white py-3 rounded-xl font-bold text-lg hover:opacity-90 transition">Mark Lesson Complete ✓</button>
+                <button onClick={()=>{
+                  setDone(true);
+                  // Sync lesson completion to Firebase
+                  if (FB_ENABLED) {
+                    const code = localStorage.getItem('sv_class_code');
+                    const sid = getStudentId();
+                    if (code && code !== 'SOLO') {
+                      fbPatch(`sv_classrooms/${code}/students/${sid}/lessons/${safeKey(key)}`, {
+                        done: true, completedAt: new Date().toISOString()
+                      });
+                      fbPatch(`sv_classrooms/${code}/students/${sid}/profile`, {lastActive: new Date().toISOString()});
+                    }
+                  }
+                }} className="w-full bg-brand-teal text-white py-3 rounded-xl font-bold text-lg hover:opacity-90 transition">Mark Lesson Complete ✓</button>
               </div>
             )}
             {done&&<div className="mt-4 flex items-center gap-2 text-brand-teal font-bold">⭐ Lesson complete! Outstanding work.</div>}
@@ -2850,7 +2999,21 @@ const HomeworkSection = ({ lesson, isStudent, isTeacher }) => {
             })}
             {isStudent && !quizState.submitted && (
               <button disabled={quizAnswered < quiz.length}
-                onClick={() => setQuizState(p => ({...p, submitted:true}))}
+                onClick={() => {
+                  setQuizState(p => ({...p, submitted:true}));
+                  // Sync quiz score to Firebase
+                  if (FB_ENABLED) {
+                    const code = localStorage.getItem('sv_class_code');
+                    const sid = getStudentId();
+                    if (code && code !== 'SOLO') {
+                      const score = quiz.filter((q,i) => quizState.answers[i] === q.ans).length;
+                      fbPatch(`sv_classrooms/${code}/students/${sid}/lessons/${safeKey(key)}`, {
+                        quizScore: score, quizTotal: quiz.length, quizSubmittedAt: new Date().toISOString()
+                      });
+                      fbPatch(`sv_classrooms/${code}/students/${sid}/profile`, {lastActive: new Date().toISOString()});
+                    }
+                  }
+                }}
                 className={`w-full py-3 rounded-xl font-bold text-sm transition ${quizAnswered < quiz.length ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-brand-pink text-white hover:opacity-90'}`}>
                 {quizAnswered < quiz.length ? `Answer all ${quiz.length} questions to submit` : 'Submit Answers'}
               </button>
@@ -2952,6 +3115,235 @@ const HomeworkSection = ({ lesson, isStudent, isTeacher }) => {
         )}
       </div>
     </section>
+  );
+};
+
+/* ── TEACHER CLASS MANAGER ───────────────────────────────────────────── */
+const TeacherClassManager = () => {
+  const [myCode, setMyCode] = useLS('sv_teacher_class_code', '');
+  const [teacherName, setTeacherName] = useLS('sv_teacher_name', '');
+  const [students, setStudents] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  const loadStudents = async (code) => {
+    if (!FB_ENABLED || !code) return;
+    setLoading(true);
+    const data = await fbRead(`sv_classrooms/${code}/students`);
+    setStudents(data || {});
+    setLastRefresh(new Date());
+    setLoading(false);
+  };
+
+  useEffect(() => { if (myCode && myCode !== '') loadStudents(myCode); }, [myCode]);
+
+  const createClass = async () => {
+    if (!teacherName.trim()) return;
+    setCreating(true);
+    const code = genClassCode();
+    if (FB_ENABLED) {
+      await fbWrite(`sv_classrooms/${code}/info`, {
+        teacherName: teacherName.trim(), createdAt: new Date().toISOString(), classCode: code
+      });
+    }
+    setMyCode(code);
+    setCreating(false);
+    loadStudents(code);
+  };
+
+  const copyCode = () => { navigator.clipboard.writeText(myCode).catch(()=>{}); };
+
+  if (!FB_ENABLED) return (
+    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 space-y-2">
+      <p className="font-bold text-amber-800">Firebase Setup Required</p>
+      <p className="text-sm text-amber-700">To see student data on your dashboard, you need to connect a Firebase Realtime Database. Follow the setup guide below.</p>
+      <div className="bg-white rounded-xl p-4 text-sm space-y-2 border border-amber-100">
+        <p className="font-bold text-gray-800">Quick Setup (5 minutes):</p>
+        <ol className="list-decimal list-inside space-y-1 text-gray-600">
+          <li>Go to <strong>console.firebase.google.com</strong></li>
+          <li>Click <strong>Add project</strong> (or select your existing Google Cloud project)</li>
+          <li>In your project, click <strong>Build → Realtime Database</strong></li>
+          <li>Click <strong>Create Database</strong> → choose your region → <strong>Start in test mode</strong></li>
+          <li>Copy the database URL (looks like: <code className="bg-gray-100 px-1 rounded">https://your-project-default-rtdb.firebaseio.com</code>)</li>
+          <li>Open <strong>standalone.html</strong> and replace <code className="bg-gray-100 px-1 rounded">YOUR_FIREBASE_DATABASE_URL</code> at the top of the script with your URL</li>
+          <li>Save, redeploy, and come back here</li>
+        </ol>
+      </div>
+    </div>
+  );
+
+  if (!myCode) return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+      <div>
+        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Class Setup</p>
+        <h2 className="font-black text-gray-900 text-lg mt-0.5">Create Your Classroom</h2>
+        <p className="text-sm text-gray-500 mt-1">Generate a class code to share with your students. They enter it when they first open the app.</p>
+      </div>
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Your Name</label>
+        <input value={teacherName} onChange={e=>setTeacherName(e.target.value)} placeholder="Ms. Johnson" className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-teal" />
+      </div>
+      <button onClick={createClass} disabled={creating || !teacherName.trim()} className="bg-brand-teal text-white font-bold px-6 py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50">
+        {creating ? 'Creating...' : 'Generate Class Code'}
+      </button>
+    </div>
+  );
+
+  const studentList = Object.entries(students);
+  const allLessons = Object.values(allLessonPlans).filter(l => !l.placeholder);
+  const totalLessonsCount = allLessons.length;
+
+  return (
+    <div className="space-y-5">
+      {/* Class code banner */}
+      <div className="bg-brand-teal text-white rounded-2xl p-5 flex flex-wrap items-center gap-4">
+        <div className="flex-1">
+          <p className="text-xs font-bold uppercase tracking-widest opacity-70">Your Class Code</p>
+          <p className="text-4xl font-black tracking-widest font-mono mt-1">{myCode}</p>
+          <p className="text-xs opacity-70 mt-1">Share this with your students. They enter it on first login.</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <button onClick={copyCode} className="bg-white text-brand-teal font-bold px-4 py-2 rounded-xl text-sm hover:opacity-90 transition">Copy Code</button>
+          <button onClick={() => loadStudents(myCode)} className="bg-white/20 text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-white/30 transition">
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {/* Student roster */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Student Roster</p>
+            <h3 className="font-black text-gray-900 text-base mt-0.5">{studentList.length} Student{studentList.length !== 1 ? 's' : ''} Enrolled</h3>
+          </div>
+          {lastRefresh && <p className="text-xs text-gray-400">Updated {lastRefresh.toLocaleTimeString()}</p>}
+        </div>
+
+        {studentList.length === 0 ? (
+          <div className="text-center py-10 space-y-2">
+            <div className="text-4xl">👋</div>
+            <p className="text-gray-500 font-semibold">No students yet</p>
+            <p className="text-sm text-gray-400">Share code <strong>{myCode}</strong> with your class. Students appear here once they enroll.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {studentList.map(([sid, sdata]) => {
+              const profile = sdata.profile || {};
+              const lessons = sdata.lessons || {};
+              const moods = sdata.moods || [];
+              const journal = sdata.journal || [];
+              const doneLessons = Object.values(lessons).filter(l => l.done).length;
+              const lastActive = profile.lastActive ? new Date(profile.lastActive) : null;
+              const recentMoods = Array.isArray(moods) ? moods.slice(-7) : Object.values(moods).slice(-7);
+              const avgMood = recentMoods.length ? Math.round(recentMoods.reduce((s,m)=>s+(m.mood||3),0)/recentMoods.length) : null;
+              const flaggedMoods = (Array.isArray(moods) ? moods : Object.values(moods)).filter(m => m.mood != null && m.mood <= 2);
+              const sharedJournal = (Array.isArray(journal) ? journal : Object.values(journal)).filter(j => j.shared);
+              const moodObj = avgMood ? getMood(avgMood) : null;
+              const isSelected = selectedStudent === sid;
+
+              return (
+                <div key={sid} className="border border-gray-100 rounded-xl overflow-hidden">
+                  <button onClick={() => setSelectedStudent(isSelected ? null : sid)} className="w-full text-left p-4 hover:bg-gray-50 transition">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="w-10 h-10 bg-brand-pink/10 rounded-full flex items-center justify-center font-bold text-brand-pink text-base flex-shrink-0">
+                        {(profile.name||'?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-gray-900">{profile.name || 'Unknown Student'}</p>
+                        <p className="text-xs text-gray-400">
+                          Last active: {lastActive ? lastActive.toLocaleDateString() : 'Never'} •
+                          {doneLessons}/{totalLessonsCount} lessons
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {flaggedMoods.length > 0 && (
+                          <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">⚠ {flaggedMoods.length} flagged</span>
+                        )}
+                        {moodObj && <span className="text-xl" title={`Avg mood: ${moodObj.label}`}>{moodObj.emoji}</span>}
+                        <span className="text-gray-300 text-sm">{isSelected ? '▲' : '▼'}</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {isSelected && (
+                    <div className="border-t border-gray-100 p-4 space-y-4 bg-gray-50/50">
+                      {/* Progress bars */}
+                      <div>
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Lesson Progress</p>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 bg-gray-200 rounded-full h-3">
+                            <div className="bg-brand-teal h-3 rounded-full transition-all" style={{width: totalLessonsCount > 0 ? `${(doneLessons/totalLessonsCount)*100}%` : '0%'}}/>
+                          </div>
+                          <span className="text-sm font-bold text-brand-teal">{doneLessons}/{totalLessonsCount}</span>
+                        </div>
+                        {/* Individual lesson dots */}
+                        {doneLessons > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {Object.entries(lessons).filter(([,v])=>v.done).map(([k,v])=>(
+                              <span key={k} className="bg-brand-teal/10 text-brand-teal text-xs px-2 py-0.5 rounded-full font-medium">{k.replace(/_/g,' ')}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mood history */}
+                      {recentMoods.length > 0 && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Recent Moods (last 7)</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {recentMoods.map((m, i) => {
+                              const mo = getMood(m.mood);
+                              return mo ? (
+                                <span key={i} className={`text-lg ${m.mood <= 2 ? 'ring-2 ring-red-400 rounded-full' : ''}`} title={`${m.date ? m.date.slice(0,10) : ''}: ${mo.label}`}>{mo.emoji}</span>
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Flagged moods */}
+                      {flaggedMoods.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                          <p className="text-xs font-bold text-red-700 uppercase tracking-wide">⚠ Needs Attention ({flaggedMoods.length})</p>
+                          {flaggedMoods.slice(-3).reverse().map((m, i) => (
+                            <div key={i} className="text-sm text-red-700">
+                              <span className="font-semibold">{m.date ? m.date.slice(0,10) : ''}</span>
+                              {m.note && <span className="text-red-600 ml-2">"{m.note}"</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Shared journal */}
+                      {sharedJournal.length > 0 && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Shared Journal Entries ({sharedJournal.length})</p>
+                          <div className="space-y-2">
+                            {sharedJournal.slice(-3).reverse().map((j, i) => (
+                              <div key={i} className="bg-white border border-gray-200 rounded-xl p-3 text-sm">
+                                <p className="text-xs text-gray-400 mb-1">{j.date ? j.date.slice(0,10) : ''}</p>
+                                <p className="text-gray-700 leading-relaxed">{j.text ? j.text.slice(0,300) : ''}{j.text && j.text.length > 300 ? '...' : ''}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {sharedJournal.length === 0 && recentMoods.length === 0 && doneLessons === 0 && (
+                        <p className="text-sm text-gray-400 italic text-center py-2">Student has not completed any activities yet.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -3192,6 +3584,8 @@ const TeacherHub = ({ navigate, subPage }) => {
         <h1 className="page-title">Teacher Hub</h1>
         <p className="page-subtitle mt-2">Curriculum, lesson plans, and classroom resources.</p>
       </div>
+      {/* ── Class Manager (Firebase) ── */}
+      <TeacherClassManager/>
       {/* ── Daily Brief ── */}
       <TeacherStats/>
       {/* ── Pacing Dashboard ── */}
@@ -3463,6 +3857,7 @@ function App() {
   const [loginStep, setLoginStep] = useState(null);
   const [page, setPage] = useState('Home');
   const [subPage, setSubPage] = useState(null);
+  const [showEnrollment, setShowEnrollment] = useState(false);
 
   // Role gate
   if (!role) {
@@ -3471,7 +3866,21 @@ function App() {
         onSuccess={() => { setRole('teacher'); setLoginStep(null); }}
         onBack={() => setLoginStep(null)}/>;
     }
-    return <RoleSelect onSelect={(r) => r === 'student' ? setRole('student') : setLoginStep('teacher')}/>;
+    return <RoleSelect onSelect={(r) => {
+      if (r === 'student') {
+        setRole('student');
+        if (!localStorage.getItem('sv_class_code')) {
+          setShowEnrollment(true);
+        }
+      } else {
+        setLoginStep('teacher');
+      }
+    }}/>;
+  }
+
+  // Show enrollment screen for new students
+  if (showEnrollment && role === 'student') {
+    return <StudentEnrollment onDone={() => setShowEnrollment(false)} />;
   }
 
   const switchRole = () => { setRole(null); setPage('Home'); setSubPage(null); };
