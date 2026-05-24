@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "sv_classrooms": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
