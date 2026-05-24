@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>9th Grader's Unofficial Survival Guide Hub</title>
+  <title>Scholar Vanguard | 9th Grade Survival Hub</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;700&family=Playfair+Display:wght@700&family=Indie+Flower&display=swap" rel="stylesheet"/>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -1536,7 +1536,13 @@ A red warning badge appears on that student's card in your Class Roster. Click t
 - Use the mood distribution chart to gauge the room before teaching
 - Send a Positive Referral email (Template 5) to at least one student per week
 - Check homework submission counts and follow up with the Missing Work template (Template 6) as needed
-` }
+` },
+  {
+  id: 'OnePager',
+  label: 'Student & Parent One-Pager',
+  desc: 'A printable one-pager for students and families explaining what the Survival Hub is and how to use it.',
+  content: `# Scholar Vanguard — 9th Grade Survival Hub\n## Student & Parent One-Pager\n\n**What is the Survival Hub?**\nThe Scholar Vanguard 9th Grade Survival Hub is a free digital toolkit that teaches 9th graders the skills that determine success in high school — but are almost never explicitly taught in a classroom. Every lesson, every tool, and every resource was built with one question in mind: what do students actually need to survive and thrive in 9th grade?\n\n**What does it cover?**\n- **Executive Functioning** — Time management, planning, note-taking, and study strategies\n- **Social-Emotional Learning** — Communication, teacher relationships, conflict resolution, and self-advocacy\n- **AI Literacy** — How to use AI tools ethically and effectively using the P.I.L.O.T. Framework\n- **Michigan Track** — Credits, graduation requirements, dual enrollment, CLEP, ACT/SAT, and college selection for Michigan students\n\n**How does a student use it?**\n1. Open the app at the URL your teacher provides\n2. Select "I'm a Student"\n3. Enter your name and your teacher's class code\n4. Start with the lesson your teacher assigns, or explore on your own\n\n**Is it private?**\nYes. Your journal entries stay on your device unless you choose to share them with your teacher. No email address or account is required.\n\n**For Parents**\nYou can log in using the Teacher Hub option with the password your child's teacher provides. From there you can see your child's lesson progress, mood check-ins, and any journal entries they have chosen to share. The app never collects personal information and requires no account creation.\n\n**What is the P.I.L.O.T. Framework?**\nScholar Vanguard's proprietary five-step AI accountability system that teaches students how to use AI tools responsibly:\n- **P** — Purpose: Define the goal before using AI\n- **I** — Input: Craft a clear, specific prompt\n- **L** — Lift: Evaluate and fact-check the output\n- **O** — Own It: Add your own thinking and voice\n- **T** — Transform: Produce a final product that reflects you\n\n**Contact**\nFor questions about the Scholar Vanguard curriculum, visit scholarsvanguard.com`
+  }
 ];
 
 /* ── UI PRIMITIVES ───────────────────────────────────────────────────── */
@@ -1652,8 +1658,8 @@ const RoleSelect = ({ onSelect }) => (
       {/* Brand header */}
       <div className="text-center space-y-2 fade-in">
         <div className="bg-brand-pink text-white rounded-2xl w-16 h-16 flex items-center justify-center font-bold text-3xl mx-auto mb-3" style={{fontFamily:'Montserrat'}}>9</div>
-        <h1 className="text-3xl font-black text-gray-900 leading-tight" style={{fontFamily:'Montserrat'}}>9th Grader's Unofficial<br/>Survival Guide</h1>
-        <p className="text-brand-teal font-semibold text-xs tracking-widest uppercase">A Scholar Vanguard Curriculum</p>
+        <h1 className="text-3xl font-black text-gray-900 leading-tight" style={{fontFamily:'Montserrat'}}>Scholar Vanguard<br/><span className="text-brand-teal">9th Grade Survival Hub</span></h1>
+        <p className="text-brand-teal font-semibold text-xs tracking-widest uppercase">The Official Student Hub</p>
       </div>
 
       {/* What is this */}
@@ -2217,6 +2223,8 @@ const JournalPrompts = ({ isTeacher }) => {
     setEntries(entries.map(e => e.id === id ? { ...e, grade, gradeNote } : e));
   };
 
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const deleteEntry = (id) => {
     if (confirmDeleteId === id) {
@@ -2282,6 +2290,12 @@ const JournalPrompts = ({ isTeacher }) => {
     </div>
     );
   };
+
+  const filteredEntries = entries.filter(e => {
+    if (filterFrom && e.date < filterFrom) return false;
+    if (filterTo && e.date > filterTo + 'T23:59:59') return false;
+    return true;
+  }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
   const groups = view !== 'write' ? groupEntries(view) : null;
 
@@ -2380,20 +2394,50 @@ const JournalPrompts = ({ isTeacher }) => {
               </div>
             )}
           </div>
+          {/* Date range filter */}
+          {entries.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-xl p-3 text-sm">
+              <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Filter by date:</span>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500">From</label>
+                <input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-brand-teal"/>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500">To</label>
+                <input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-brand-teal"/>
+              </div>
+              {(filterFrom||filterTo) && (
+                <button onClick={()=>{setFilterFrom('');setFilterTo('');}} className="text-xs text-brand-pink underline">Clear</button>
+              )}
+              {(filterFrom||filterTo) && (
+                <span className="text-xs text-gray-400">{filteredEntries.length} of {entries.length} entries</span>
+              )}
+            </div>
+          )}
           {entries.length === 0 && (
             <div className="text-center py-10">
               <p className="text-gray-400 italic">No entries yet.</p>
               <button onClick={() => setView('write')} className="mt-3 text-brand-pink text-sm font-semibold underline">Write your first entry →</button>
             </div>
           )}
-          {groups && Object.keys(groups).map(gKey => (
+          {groups && Object.keys(groups).map(gKey => {
+            const groupFiltered = groups[gKey].filter(e => {
+              if (filterFrom && e.date < filterFrom) return false;
+              if (filterTo && e.date > filterTo + 'T23:59:59') return false;
+              return true;
+            });
+            if (groupFiltered.length === 0) return null;
+            return (
             <div key={gKey}>
               <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2 mb-2">
                 <span className="h-px flex-1 bg-gray-200"/> {gKey} <span className="h-px flex-1 bg-gray-200"/>
               </h3>
-              {groups[gKey].map(renderEntry)}
+              {groupFiltered.map(renderEntry)}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Card>
@@ -2644,6 +2688,19 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
                 <div className="flex items-center gap-2 text-brand-teal font-bold">⭐ Reflection complete! You're ready to mark this lesson done.</div>
                 <button onClick={()=>{
                   setDone(true);
+                  // Auto-add suggested task
+                  const taskKey = (lesson.title||key).replace(/\s+/g,'_');
+                  const suggestedTask = lessonAutoTasks[taskKey];
+                  if (suggestedTask) {
+                    try {
+                      const existingTasks = JSON.parse(localStorage.getItem('tasks')) || [];
+                      const alreadyExists = existingTasks.some(t => t.text === suggestedTask);
+                      if (!alreadyExists) {
+                        const newTask = { id: Date.now(), text: suggestedTask, done: false, source: 'lesson', date: new Date().toISOString().slice(0,10) };
+                        localStorage.setItem('tasks', JSON.stringify([...existingTasks, newTask]));
+                      }
+                    } catch {}
+                  }
                   // Sync lesson completion to Firebase
                   if (FB_ENABLED) {
                     const code = localStorage.getItem('sv_class_code');
@@ -2860,6 +2917,22 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
       </div>
     </Card>
   );
+};
+
+/* ── LESSON AUTO-TASKS ───────────────────────────────────────────────── */
+const lessonAutoTasks = {
+  'Introduction_to_the_Survival_Guide': 'Write in your journal: What is one thing you want to get better at this year?',
+  'Time_Management_101': 'Block your study time in your planner for the next 7 days.',
+  'Project_Chunker': 'Pick one upcoming assignment and break it into 5 steps using the Project Chunker.',
+  'Note-Taking_Systems': 'Rewrite your notes from your last class using the Cornell method.',
+  'Study_Strategies': 'Plan your study session for your next test using the methods from this lesson.',
+  'Teacher_Communication': 'Write and send an email to one of your teachers this week.',
+  'Conflict_Resolution': 'Identify one recurring conflict in your life and write out a resolution plan.',
+  'Self-Advocacy': 'Schedule a check-in with your school counselor or a trusted adult this month.',
+  'Wellness_and_Stress': 'Add one wellness habit to your Habit Tracker today.',
+  'AI_Literacy_Intro': 'Try one P.I.L.O.T. Framework prompt on a real assignment this week.',
+  'Advanced_AI_Integration': 'Complete a full P.I.L.O.T. citation for your next AI-assisted assignment.',
+  'AI_Ethics_and_Ownership': 'Review your last AI-assisted assignment. Did you own the final product?',
 };
 
 /* ── LESSON QUIZZES ──────────────────────────────────────────────────── */
@@ -3421,6 +3494,70 @@ const TeacherClassManager = () => {
           </div>
         )}
       </div>
+
+      {/* Aggregate Gradebook */}
+      {studentList.length > 1 && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+          <div>
+            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Class Overview</p>
+            <h3 className="font-black text-gray-900 text-base mt-0.5">Aggregate Gradebook</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+            {[
+              {
+                val: studentList.length,
+                label: 'Enrolled',
+                color: 'text-brand-teal'
+              },
+              {
+                val: Math.round(studentList.reduce((sum,[,s])=>sum+Object.values(s.lessons||{}).filter(l=>l.done).length,0)/studentList.length) || 0,
+                label: 'Avg Lessons Done',
+                color: 'text-brand-pink'
+              },
+              {
+                val: studentList.filter(([,s])=>{
+                  const moods = Array.isArray(s.moods)?s.moods:Object.values(s.moods||{});
+                  return moods.some(m=>m.mood!=null&&m.mood<=2);
+                }).length,
+                label: 'Need Attention',
+                color: 'text-red-500'
+              },
+              {
+                val: (() => {
+                  const allMoods = studentList.flatMap(([,s])=>Array.isArray(s.moods)?s.moods:Object.values(s.moods||{})).filter(m=>m.mood!=null);
+                  return allMoods.length ? (allMoods.reduce((s,m)=>s+m.mood,0)/allMoods.length).toFixed(1) : 'N/A';
+                })(),
+                label: 'Class Avg Mood',
+                color: 'text-brand-yellow'
+              },
+            ].map(({val,label,color})=>(
+              <div key={label} className="bg-gray-50 rounded-xl p-3">
+                <div className={`text-2xl font-black ${color}`}>{val}</div>
+                <div className="text-[10px] text-gray-400 uppercase font-bold mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+          {/* Lesson completion bar per student */}
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Lesson Completion by Student</p>
+            <div className="space-y-2">
+              {studentList.map(([sid,s])=>{
+                const done = Object.values(s.lessons||{}).filter(l=>l.done).length;
+                const pct = totalLessonsCount>0?Math.round((done/totalLessonsCount)*100):0;
+                return (
+                  <div key={sid} className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-gray-600 w-24 truncate flex-shrink-0">{s.profile?.name||'Student'}</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                      <div className="bg-brand-teal h-2.5 rounded-full transition-all" style={{width:`${pct}%`}}/>
+                    </div>
+                    <span className="text-xs text-gray-400 w-8 text-right flex-shrink-0">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -3731,7 +3868,7 @@ const TeacherHub = ({ navigate, subPage }) => {
       </div>
       {[
         { label:'Strategic Guides', icon:Lightbulb, color:'text-brand-yellow', ids:['Overview','Strategies','Guide','Implementation','AIToolkit','AIIntegration','Socratic'] },
-        { label:'Administrative Essentials', icon:TeacherIcon, color:'text-brand-teal', ids:['Syllabus','Pacing','Rubrics','Communication','TeacherFAQ'] }
+        { label:'Administrative Essentials', icon:TeacherIcon, color:'text-brand-teal', ids:['Syllabus','Pacing','Rubrics','Communication','TeacherFAQ','OnePager'] }
       ].map(({label,icon:Icon,color,ids}) => (
         <section key={label}>
           <div className="flex items-center gap-4 mb-6 border-b pb-2"><Icon size={26} cls={color}/><h2 className="section-header">{label}</h2></div>
@@ -4047,6 +4184,13 @@ const HomeschoolHub = ({ navigate, switchRole }) => {
         </button>
       </div>
 
+      {/* Print One-Pager */}
+      <div className="text-center no-print">
+        <button onClick={() => navigate('StudentHub/OnePager')} className="inline-flex items-center gap-2 bg-white border border-gray-200 text-brand-teal font-semibold px-5 py-2.5 rounded-xl hover:shadow-md hover:border-brand-teal transition text-sm">
+          🖨 Print Student &amp; Parent One-Pager
+        </button>
+      </div>
+
       {/* Switch role */}
       <div className="text-center">
         <button onClick={switchRole} className="text-sm text-gray-400 underline hover:text-gray-600">Switch role or start over</button>
@@ -4161,9 +4305,28 @@ function App() {
             <ToolCard title="Journal & AI Log" icon={BookOpen} desc="Reflect, download, and track your thinking." badge={studentJournalCount > 0 ? studentJournalCount : null} onClick={() => navigate('StudentHub/Journal')}/>
             <ToolCard title="Lesson Library" icon={HandoutIcon} desc={`${studentLessonsDone} of ${totalLessons} lessons complete.`} onClick={() => navigate('StudentHub/Lessons')}/>
           </div>
+          <div className="text-center no-print">
+            <button onClick={() => navigate('StudentHub/OnePager')} className="inline-flex items-center gap-2 bg-white border border-gray-200 text-brand-teal font-semibold px-5 py-2.5 rounded-xl hover:shadow-md hover:border-brand-teal transition text-sm">
+              🖨 Print Student &amp; Parent One-Pager
+            </button>
+          </div>
         </div>
         );
       }
+
+      if (subPage === 'OnePager') return (
+        <div className="max-w-3xl mx-auto space-y-6">
+          <BackNav onClick={() => setSubPage(null)} label="Back to Student Hub"/>
+          {teacherPreviewBar}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h1 className="page-title">Student &amp; Parent One-Pager</h1>
+            <PrintBtn onClick={() => window.print()}>Print One-Pager</PrintBtn>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 print-card">
+            <div className="md-content" dangerouslySetInnerHTML={{__html: renderMarkdown(teacherSections.find(s=>s.id==='OnePager')?.content||'')}}/>
+          </div>
+        </div>
+      );
 
       if (subPage === 'Lessons') return (
         <div className="max-w-6xl mx-auto space-y-12">
