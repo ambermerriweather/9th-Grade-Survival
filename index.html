@@ -1468,7 +1468,75 @@ If there is something going on at home that is making it harder for [Student Nam
 The deadline to submit without academic penalty is [date]. Please encourage [Student Name] to reach out to me directly — by email or before or after class — and I will work with them.
 
 [Your Name]
-[Email] | [Office hours or best contact time]` }
+[Email] | [Office hours or best contact time]` },
+  {
+  id: 'TeacherFAQ',
+  label: 'Teacher FAQ & Setup Checklist',
+  desc: 'Answers to day-one questions and a step-by-step classroom setup checklist.',
+  content: `# Teacher FAQ & Classroom Setup Checklist
+
+## Frequently Asked Questions
+
+**How do students access the app?**
+Share the URL: https://scholar-vanguard-hub.netlify.app — students open it in any browser on any device. No download, no account, no login required.
+
+**Is student data stored anywhere other than their own device?**
+By default, all data lives in the student's browser (localStorage) and never leaves their device. If you have set up a class code, lesson completions, moods, and journal entries the student chooses to share sync to a private Firebase database connected to your classroom only.
+
+**What devices work?**
+Any device with a modern browser. Chrome, Safari, Firefox, and Edge all work. Phone, tablet, Chromebook, and laptop all work. An internet connection is required to load the app. After first load, most features work offline.
+
+**Can students see each other's journals?**
+No. Each student's data is stored on their own device. Even with Firebase sync enabled, students can only see their own entries. Only the teacher dashboard can view student data.
+
+**What is the class code and who should have it?**
+You generate the class code from the Teacher Hub under Class Setup. Share it with your students verbally or write it on the board on day one. Do not post it publicly online. Students enter it once and it is saved automatically.
+
+**How do I reset a student's progress?**
+Have the student open their browser settings, go to Site Data or Storage, and clear data for the app URL. This resets everything on their device. You cannot reset a student remotely.
+
+**What is the teacher password?**
+SVPILOT25 — share this only with co-teachers or instructional coaches, not students.
+
+**What is the P.I.L.O.T. Framework?**
+Scholar Vanguard's proprietary five-step AI accountability system. Purpose, Input, Lift, Own It, Transform. It is taught in the AI Literacy lessons (chapters 10 through 12). Introduce it to students before those lessons.
+
+**Do I need to teach the lessons in order?**
+No. The lessons are designed to be modular. That said, chapters 1 through 5 (Executive Functioning) build on each other and are best taught in sequence. The Michigan Track lessons are completely standalone.
+
+**What if a student's mood is flagged?**
+A red warning badge appears on that student's card in your Class Roster. Click the card to see the date and any note they wrote. Follow your school's standard wellness check-in protocol. The app flags moods rated 1 or 2 out of 5.
+
+---
+
+## Classroom Setup Checklist
+
+### Before Day One
+- Open the Teacher Hub and generate your class code under Class Setup
+- Write the class code somewhere you can share it quickly (sticky note, slide, or whiteboard)
+- Preview the Student Experience from your Teacher Hub so you know what students will see
+- Decide how you will introduce the journal (private reflection tool, not graded)
+- Test the app on the device type your students will use most
+
+### Day One With Students
+- Share the URL: scholar-vanguard-hub.netlify.app
+- Walk through the role selection screen together as a class
+- Have students enter their name and your class code
+- Set a privacy norm out loud: "Your journal stays on your device. I can only see what you choose to share."
+- Have every student write their first journal entry before leaving class
+
+### First Week
+- Introduce the P.I.L.O.T. Framework before any AI-related lessons
+- Assign lesson 1 (Introduction) as the first official lesson
+- Check your Class Roster daily to see who has enrolled and completed activities
+- Follow up with any student showing a flagged mood (red badge on their card)
+
+### Ongoing
+- Review your Daily Brief at the start of each class day
+- Use the mood distribution chart to gauge the room before teaching
+- Send a Positive Referral email (Template 5) to at least one student per week
+- Check homework submission counts and follow up with the Missing Work template (Template 6) as needed
+` }
 ];
 
 /* ── UI PRIMITIVES ───────────────────────────────────────────────────── */
@@ -1621,13 +1689,21 @@ const RoleSelect = ({ onSelect }) => (
       {/* Role select */}
       <div className="w-full space-y-4 fade-in">
         <p className="text-center text-gray-500 text-sm font-semibold">Who are you here as?</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <button onClick={() => onSelect('student')}
             className="bg-white border-2 border-gray-200 hover:border-brand-pink p-7 rounded-2xl flex flex-col items-center gap-3 transition-all hover:shadow-lg">
             <StudentIcon size={40} cls="text-brand-pink"/>
             <div className="text-center">
               <div className="font-black text-gray-900" style={{fontFamily:'Montserrat'}}>I'm a Student</div>
               <p className="text-xs text-gray-400 mt-1">Tools, lessons, and your survival kit</p>
+            </div>
+          </button>
+          <button onClick={() => onSelect('homeschool')}
+            className="bg-white border-2 border-gray-200 hover:border-brand-yellow p-7 rounded-2xl flex flex-col items-center gap-3 transition-all hover:shadow-lg">
+            <span className="text-4xl">🏠</span>
+            <div className="text-center">
+              <div className="font-black text-gray-900" style={{fontFamily:'Montserrat'}}>I'm a Homeschool Student</div>
+              <p className="text-xs text-gray-400 mt-1">Self-paced learning with parent oversight</p>
             </div>
           </button>
           <button onClick={() => onSelect('teacher')}
@@ -1700,14 +1776,16 @@ const Header = ({ page, navigate, role, onSwitchRole }) => {
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('Home')}>
           <span className="bg-brand-pink text-white rounded-lg w-9 h-9 flex items-center justify-center font-bold text-lg" style={{fontFamily:'Montserrat'}}>9</span>
           <h1 className="text-xl font-semibold text-gray-900 hidden sm:block" style={{fontFamily:'Montserrat'}}>Survival Hub</h1>
-          <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${role==='teacher'?'bg-brand-teal/10 text-brand-teal':'bg-brand-pink/10 text-brand-pink'}`}>
-            {role==='teacher'?'Teacher':'Student'}
+          <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${role==='teacher'?'bg-brand-teal/10 text-brand-teal':role==='homeschool'?'bg-yellow-100 text-yellow-700':'bg-brand-pink/10 text-brand-pink'}`}>
+            {role==='teacher'?'Teacher':role==='homeschool'?'Homeschool':'Student'}
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {nb('Home','Home',HomeIcon)}
+          {role!=='homeschool'&&nb('Home','Home',HomeIcon)}
           {role==='teacher'&&nb('Teacher','TeacherHub',TeacherIcon)}
           {role==='student'&&nb('Student','StudentHub',StudentIcon)}
+          {role==='homeschool'&&nb('My Hub','Home',HomeIcon)}
+          {role==='homeschool'&&nb('Lessons','StudentHub/Lessons',BookOpen)}
           {nb('Handouts','HandoutLibrary',HandoutIcon)}
           {role==='teacher'&&nb('Student View','StudentHub',StudentIcon)}
           {role==='teacher'&&nb('Coaching','Contact',MailIcon)}
@@ -3653,7 +3731,7 @@ const TeacherHub = ({ navigate, subPage }) => {
       </div>
       {[
         { label:'Strategic Guides', icon:Lightbulb, color:'text-brand-yellow', ids:['Overview','Strategies','Guide','Implementation','AIToolkit','AIIntegration','Socratic'] },
-        { label:'Administrative Essentials', icon:TeacherIcon, color:'text-brand-teal', ids:['Syllabus','Pacing','Rubrics','Communication'] }
+        { label:'Administrative Essentials', icon:TeacherIcon, color:'text-brand-teal', ids:['Syllabus','Pacing','Rubrics','Communication','TeacherFAQ'] }
       ].map(({label,icon:Icon,color,ids}) => (
         <section key={label}>
           <div className="flex items-center gap-4 mb-6 border-b pb-2"><Icon size={26} cls={color}/><h2 className="section-header">{label}</h2></div>
@@ -3852,6 +3930,131 @@ const ContactPage = () => (
 );
 
 /* ── MAIN APP ────────────────────────────────────────────────────────── */
+/* ── HOMESCHOOL HUB ──────────────────────────────────────────────────── */
+const HomeschoolHub = ({ navigate, switchRole }) => {
+  const [studentName] = useLS('sv_student_name', '');
+  const studentLessonsDone = (() => {
+    try {
+      return Object.values(allLessonPlans).filter(l => !l.placeholder && JSON.parse(localStorage.getItem(`lesson_done_${l.title.replace(/\s+/g,'_')}`))).length;
+    } catch { return 0; }
+  })();
+  const totalLessons = Object.values(allLessonPlans).filter(l => !l.placeholder).length;
+  const journalCount = (() => { try { return (JSON.parse(localStorage.getItem('journal'))||[]).length; } catch { return 0; } })();
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-10 px-4 py-8">
+      {/* Header */}
+      <div className="text-center space-y-2">
+        <div className="text-4xl">🏠</div>
+        <h1 className="page-title">Homeschool Learning Hub</h1>
+        <p className="page-subtitle mt-2">Self-paced. Scholar Vanguard curriculum. Your pace, your space.</p>
+        {studentName && <p className="text-brand-teal font-semibold">Welcome back, {studentName}.</p>}
+      </div>
+
+      {/* Quick stats */}
+      <div className="grid grid-cols-3 gap-4 text-center max-w-sm mx-auto">
+        <div className="bg-white rounded-xl border p-3">
+          <div className="text-2xl font-black text-brand-teal">{studentLessonsDone}</div>
+          <div className="text-xs text-gray-400 mt-0.5">Lessons Done</div>
+        </div>
+        <div className="bg-white rounded-xl border p-3">
+          <div className="text-2xl font-black text-brand-pink">{totalLessons - studentLessonsDone}</div>
+          <div className="text-xs text-gray-400 mt-0.5">Remaining</div>
+        </div>
+        <div className="bg-white rounded-xl border p-3">
+          <div className="text-2xl font-black text-brand-yellow">{journalCount}</div>
+          <div className="text-xs text-gray-400 mt-0.5">Journal Entries</div>
+        </div>
+      </div>
+
+      {/* What is different for homeschool */}
+      <div className="bg-brand-yellow/10 border border-brand-yellow/30 rounded-2xl p-6 space-y-3">
+        <h2 className="font-black text-gray-900 text-base" style={{fontFamily:'Montserrat'}}>How This Works for Homeschool Families</h2>
+        <ul className="space-y-2 text-sm text-gray-700">
+          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> All lessons are self-paced — no bell schedule, no deadlines unless you set them</li>
+          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> Parents can access the Teacher Hub using password <strong>SVPILOT25</strong> to monitor progress</li>
+          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> The Michigan Track is especially relevant — covers credits, dual enrollment, CLEP, and college selection for Michigan students</li>
+          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> Journal entries stay private on this device unless you choose to share them</li>
+          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> No class code required — but parents can generate one from the Teacher Hub to enable progress tracking</li>
+        </ul>
+      </div>
+
+      {/* Michigan Homeschool Resource */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="text-3xl">🎓</span>
+          <div>
+            <h2 className="font-black text-gray-900 text-base" style={{fontFamily:'Montserrat'}}>Michigan Homeschool Academic Guide</h2>
+            <p className="text-sm text-gray-500 mt-1">Michigan law (MCL 380.1561) allows parents to homeschool without state approval. Here is what you need to know to keep your transcript competitive.</p>
+          </div>
+        </div>
+        <div className="space-y-3 text-sm text-gray-700">
+          <div className="bg-gray-50 rounded-xl p-4 space-y-1">
+            <p className="font-bold text-gray-800">Legal Requirements</p>
+            <p>Michigan does not require homeschool registration, standardized testing, or portfolio submission. You are your own school of record.</p>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4 space-y-1">
+            <p className="font-bold text-gray-800">Building a Competitive Transcript</p>
+            <ul className="list-disc list-inside space-y-0.5 text-gray-600">
+              <li>Document all coursework with course titles, credit hours, and grades</li>
+              <li>Use the Michigan Merit Curriculum as your benchmark (18 credits minimum)</li>
+              <li>Consider CLEP exams to earn college credit for self-taught subjects</li>
+              <li>Dual enrollment at a Michigan community college is available to homeschool students under PSEO</li>
+              <li>The ACT is available to homeschool students — Michigan offers free testing in 11th grade</li>
+            </ul>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4 space-y-1">
+            <p className="font-bold text-gray-800">Key Michigan Homeschool Resources</p>
+            <ul className="list-disc list-inside space-y-0.5 text-gray-600">
+              <li>Michigan Homeschool Organization (MHEO): mheo.org</li>
+              <li>Home School Legal Defense Association: hslda.org</li>
+              <li>Michigan Virtual (online courses for homeschool students): michiganvirtual.org</li>
+              <li>Wayne County RESA dual enrollment info: resa.net</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Tools grid */}
+      <div>
+        <h2 className="section-header mb-4">Your Learning Tools</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {[
+            { title:'Lesson Library', emoji:'📚', desc:`${studentLessonsDone} of ${totalLessons} complete`, action: () => navigate('StudentHub/Lessons') },
+            { title:'Journal', emoji:'📓', desc:`${journalCount} entries`, action: () => navigate('StudentHub/Journal') },
+            { title:'Task Planner', emoji:'✅', desc:'Daily priorities', action: () => navigate('StudentHub/TaskPlanner') },
+            { title:'Grade Tracker', emoji:'⭐', desc:'Log and track GPA', action: () => navigate('StudentHub/GradeTracker') },
+            { title:'Habit Tracker', emoji:'🧠', desc:'Build winning habits', action: () => navigate('StudentHub/HabitTracker') },
+            { title:'Project Chunker', emoji:'🗂️', desc:'Break big projects down', action: () => navigate('StudentHub/Chunker') },
+          ].map(({title, emoji, desc, action}) => (
+            <button key={title} onClick={action}
+              className="bg-white border border-gray-200 rounded-2xl p-5 text-center hover:shadow-md hover:border-brand-yellow transition-all space-y-2">
+              <div className="text-3xl">{emoji}</div>
+              <div className="font-bold text-gray-900 text-sm">{title}</div>
+              <div className="text-xs text-gray-400">{desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Michigan Track highlight */}
+      <div className="bg-brand-teal text-white rounded-2xl p-6 space-y-3">
+        <h2 className="font-black text-xl" style={{fontFamily:'Montserrat'}}>🗺 Start with the Michigan Track</h2>
+        <p className="text-white/80 text-sm">The Michigan Track was built specifically for students navigating the Michigan education system. As a homeschool student, these 8 lessons on credits, dual enrollment, CLEP, and college selection are the most directly applicable to your situation.</p>
+        <button onClick={() => navigate('StudentHub/Lessons')}
+          className="bg-white text-brand-teal font-bold px-5 py-2.5 rounded-xl text-sm hover:opacity-90 transition">
+          Go to Michigan Track →
+        </button>
+      </div>
+
+      {/* Switch role */}
+      <div className="text-center">
+        <button onClick={switchRole} className="text-sm text-gray-400 underline hover:text-gray-600">Switch role or start over</button>
+      </div>
+    </div>
+  );
+};
+
 function App() {
   const [role, setRole] = useLS('hub_role', null);
   const [loginStep, setLoginStep] = useState(null);
@@ -3872,6 +4075,8 @@ function App() {
         if (!localStorage.getItem('sv_class_code')) {
           setShowEnrollment(true);
         }
+      } else if (r === 'homeschool') {
+        setRole('homeschool');
       } else {
         setLoginStep('teacher');
       }
@@ -4022,6 +4227,8 @@ function App() {
     }
 
     if (page === 'TeacherHub') return <TeacherHub navigate={navigate} subPage={subPage}/>;
+
+    if (role === 'homeschool' && page === 'Home') return <HomeschoolHub navigate={navigate} switchRole={switchRole}/>;
 
     if (page === 'HandoutLibrary') return (
       <div className="max-w-4xl mx-auto space-y-10">
