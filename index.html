@@ -1836,6 +1836,7 @@ const Header = ({ page, navigate, role, onSwitchRole }) => {
           {nb('Handouts','HandoutLibrary',HandoutIcon)}
           {role==='teacher'&&nb('Student View','StudentHub',StudentIcon)}
           {role==='teacher'&&nb('Coaching','Contact',MailIcon)}
+          {nb('About','About',UsersIcon)}
           <button onClick={() => onSwitchRole()}
             className="ml-2 text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-2 py-1.5 transition hover:border-gray-300">
             Switch
@@ -3998,6 +3999,129 @@ const TeacherHub = ({ navigate, subPage }) => {
 };
 
 /* ── CONTACT / CONSULTING PAGE ───────────────────────────────────────── */
+/* ── IMPACT COUNTER ─────────────────────────────────────────────────── */
+const ImpactCounter = () => {
+  const [stats, setStats] = React.useState(null);
+  React.useEffect(() => {
+    if (!FB_ENABLED) return;
+    (async () => {
+      const classrooms = await fbRead('sv_classrooms');
+      if (!classrooms) return;
+      let students = 0, moods = 0, journals = 0, lessons = 0;
+      Object.values(classrooms).forEach(cls => {
+        const studs = cls.students || {};
+        Object.values(studs).forEach(s => {
+          students++;
+          moods += Array.isArray(s.moods) ? s.moods.length : Object.keys(s.moods||{}).length;
+          journals += (Array.isArray(s.journal) ? s.journal : Object.values(s.journal||{})).filter(j => j.shared).length;
+          lessons += Object.values(s.lessons||{}).filter(l => l.done).length;
+        });
+      });
+      setStats({ students, moods, journals, lessons });
+    })();
+  }, []);
+  const totalLessons = Object.values(allLessonPlans).filter(l => !l.placeholder).length;
+  const items = [
+    { val: totalLessons, label: 'Lessons in Curriculum', color: 'text-brand-teal', static: true },
+    { val: stats ? stats.students : null, label: 'Students Enrolled', color: 'text-brand-pink' },
+    { val: stats ? stats.moods : null, label: 'Mood Check-Ins', color: 'text-brand-yellow' },
+    { val: stats ? stats.lessons : null, label: 'Lessons Completed', color: 'text-brand-teal' },
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {items.map(({ val, label, color, static: isStatic }) => (
+        <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 text-center space-y-1">
+          <div className={`text-3xl font-black ${color}`}>
+            {val != null ? val : isStatic ? totalLessons : <span className="text-gray-200 animate-pulse">...</span>}
+          </div>
+          <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wide leading-tight">{label}</div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/* ── FOUNDER BIO PAGE ───────────────────────────────────────────────── */
+const FounderBioPage = () => (
+  <div className="max-w-3xl mx-auto space-y-10 fade-in">
+
+    {/* Hero */}
+    <div className="rounded-3xl p-8 sm:p-12 space-y-4" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
+      <p className="text-xs font-bold tracking-widest uppercase text-brand-teal">Scholar Vanguard</p>
+      <h1 className="page-title text-3xl sm:text-4xl">About the Founder</h1>
+      <p className="text-gray-600 text-lg leading-relaxed max-w-xl">Built by an educator from inside the community it serves.</p>
+    </div>
+
+    {/* Bio card */}
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 space-y-6">
+      <div className="flex items-start gap-5 flex-wrap sm:flex-nowrap">
+        <div className="w-20 h-20 flex-shrink-0 rounded-2xl bg-brand-pink/10 flex items-center justify-center">
+          <span className="text-4xl font-black text-brand-pink" style={{fontFamily:'Montserrat'}}>AM</span>
+        </div>
+        <div className="space-y-1">
+          <h2 className="font-black text-gray-900 text-2xl" style={{fontFamily:'Montserrat'}}>Amber Merriweather</h2>
+          <p className="text-brand-teal font-semibold text-sm">Founder, Scholar Vanguard</p>
+          <p className="text-gray-500 text-sm">Detroit, Michigan</p>
+        </div>
+      </div>
+      <div className="space-y-4 text-gray-700 text-sm leading-relaxed">
+        <p>
+          I am a doctoral candidate at Grand Canyon University, where my research centers on how Black American teachers describe the strategies they use to overcome the challenges of trauma-informed leadership with Black American students. I am also a substitute teacher in the Detroit Public Schools Community District. That means I have studied this problem in an academic framework and lived it in a real classroom — sometimes on the same day.
+        </p>
+        <p>
+          Scholar Vanguard started with a question I could not stop asking: why do so many brilliant Black 9th graders arrive to high school capable of everything and still not make it through? The research is clear. The 9th grade transition year is the highest-dropout-risk point in a student's academic life. But the tools built to help students navigate it were not built for our kids. They did not reflect the reality of navigating predominantly Black schools in under-resourced districts, carrying family stress into the classroom, or trying to advocate for yourself in systems that were not designed with you in mind.
+        </p>
+        <p>
+          So I built one that was. Scholar Vanguard is a free, browser-based platform covering executive functioning, social-emotional learning, AI literacy, and Michigan academic track planning — with a live teacher dashboard that surfaces student emotional patterns before they become crises. No app download. No login required for students. No cost.
+        </p>
+        <p>
+          The skills in this curriculum are not just for 9th grade. Time management, self-advocacy, conflict resolution, knowing how to use AI accountably, knowing your options in Michigan for dual enrollment or CTE — students carry every one of these into 10th, 11th, 12th grade, and beyond. Scholar Vanguard is designed to grow with them.
+        </p>
+        <p>
+          This was built on personal time, on personal devices, with no outside funding. It is a product of the belief that the best tools for Black students should come from people who know and love Black students.
+        </p>
+      </div>
+    </div>
+
+    {/* Credentials */}
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {[
+        { icon: '🎓', label: 'Academic Background', detail: 'Doctoral candidate, Grand Canyon University. Dissertation: trauma-informed leadership with Black American teachers and students.' },
+        { icon: '🏫', label: 'Classroom Experience', detail: 'Active K-12 substitute teacher, Detroit Public Schools Community District (DPSCD).' },
+        { icon: '📍', label: 'Michigan Roots', detail: 'Detroit-based. Scholar Vanguard launches in Michigan first — because that is where the work starts.' },
+      ].map(({ icon, label, detail }) => (
+        <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-2">
+          <div className="text-2xl">{icon}</div>
+          <p className="font-black text-gray-900 text-sm">{label}</p>
+          <p className="text-xs text-gray-500 leading-relaxed">{detail}</p>
+        </div>
+      ))}
+    </div>
+
+    {/* Mission statement */}
+    <div className="bg-brand-teal text-white rounded-2xl p-8 text-center space-y-3">
+      <p className="text-white/70 text-xs font-bold uppercase tracking-widest">The Mission</p>
+      <p className="text-xl font-black leading-snug max-w-xl mx-auto">"The best tools for Black students should come from people who know and love Black students."</p>
+      <p className="text-white/80 text-sm">Scholar Vanguard is built by us, for us.</p>
+    </div>
+
+    {/* Impact counter */}
+    <div className="space-y-3">
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">Scholar Vanguard by the Numbers</p>
+      <ImpactCounter />
+    </div>
+
+    {/* CTA */}
+    <div className="text-center pb-4">
+      <p className="text-gray-500 text-sm mb-3">Want to bring Scholar Vanguard to your classroom or district?</p>
+      <a href="mailto:hello@scholarsvanguard.com?subject=Scholar Vanguard Partnership Inquiry"
+        className="inline-block bg-brand-pink text-white font-bold px-8 py-3 rounded-xl hover:opacity-90 transition">
+        Get in Touch
+      </a>
+    </div>
+  </div>
+);
+
 const ContactPage = () => (
   <div className="max-w-4xl mx-auto space-y-10 fade-in">
 
@@ -4018,7 +4142,7 @@ const ContactPage = () => (
         <h2 className="text-xl font-black mb-2">2 Free 30-Minute Coaching Sessions</h2>
         <p className="text-white/90 text-sm leading-relaxed">As one of our first wave educators piloting the Survival Guide, you receive two complimentary 1:1 coaching sessions with a Scholar Vanguard curriculum specialist — no strings attached. Use them to get oriented, troubleshoot, or deepen your implementation.</p>
       </div>
-      <a href="mailto:amerriweatherdoctoralalerts@gmail.com?subject=First Wave Coaching Session Request"
+      <a href="mailto:hello@scholarsvanguard.com?subject=First Wave Coaching Session Request"
         className="bg-white text-brand-pink font-bold px-5 py-3 rounded-xl text-sm hover:bg-pink-50 transition whitespace-nowrap flex-shrink-0">
         Book My Sessions →
       </a>
@@ -4120,9 +4244,9 @@ const ContactPage = () => (
         <div className="space-y-4">
           <p className="text-gray-600 text-sm leading-relaxed">Ready to book your free sessions, explore a school partnership, or just ask a question? Reach out directly — we respond to every educator within 24 hours.</p>
           <div className="space-y-3">
-            <a href="mailto:amerriweatherdoctoralalerts@gmail.com"
+            <a href="mailto:hello@scholarsvanguard.com"
               className="flex items-center gap-3 text-brand-teal font-semibold text-sm hover:underline">
-              <MailIcon size={18} cls="text-brand-teal"/> amerriweatherdoctoralalerts@gmail.com
+              <MailIcon size={18} cls="text-brand-teal"/> hello@scholarsvanguard.com
             </a>
             <p className="text-xs text-gray-400">Response time: within 24 hours on business days.</p>
           </div>
@@ -4488,6 +4612,7 @@ function App() {
     );
 
     if (page === 'Contact') return <ContactPage/>;
+    if (page === 'About') return <FounderBioPage/>;
 
     return <Home navigate={navigate} role={role}/>;
   };
