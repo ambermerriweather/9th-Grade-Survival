@@ -114,6 +114,25 @@ const genClassCode = () => Math.random().toString(36).slice(2,8).toUpperCase();
 // Safe key for Firebase (no special chars)
 const safeKey = (s) => s.replace(/[.#$\/\[\]]/g, '_');
 
+// Read the class code from localStorage. useLS stores values JSON-encoded
+// (with quotes), so a raw getItem returns '"ABC123"' and corrupts Firebase paths.
+const getClassCode = () => {
+  try {
+    const v = localStorage.getItem('sv_class_code');
+    if (!v) return null;
+    const parsed = v.startsWith('"') ? JSON.parse(v) : v;
+    return parsed || null;
+  } catch { return null; }
+};
+
+// Rewrites teacher-directed lesson plan language into student-facing language
+const toStudentVoice = (t) => t
+  .replace(/\bAsk each student to\b/g, 'Each student will')
+  .replace(/\bAsk students to\b/g, 'Students will')
+  .replace(/\bHave students\b/g, 'Students will')
+  .replace(/\bHave each student\b/g, 'Each student will')
+  .replace(/\bGive students\b/g, 'Students get');
+
 /* ── ICONS ───────────────────────────────────────────────────────────── */
 const Svg = ({d,size=24,cls=""}) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size}
@@ -1589,6 +1608,7 @@ const StudentEnrollment = ({ onDone }) => {
   const [step, setStep] = useState(classCode ? 'done' : 'enroll');
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+  const [teacherName, setTeacherName] = useState('');
 
   const handleJoin = async () => {
     if (!studentName.trim()) { setError('Please enter your name.'); return; }
@@ -1603,11 +1623,11 @@ const StudentEnrollment = ({ onDone }) => {
       await fbPatch(`sv_classrooms/${code}/students/${studentId}/profile`, {
         name: studentName.trim(), joinedAt: new Date().toISOString(), lastActive: new Date().toISOString()
       });
+      setTeacherName(info.teacherName || '');
     }
     setClassCode(code);
     setVerifying(false);
-    setStep('done');
-    onDone();
+    if (FB_ENABLED) { setStep('welcome'); } else { setStep('done'); onDone(); }
   };
 
   const handleSolo = () => {
@@ -1616,6 +1636,27 @@ const StudentEnrollment = ({ onDone }) => {
   };
 
   if (step === 'done') { onDone(); return null; }
+
+  if (step === 'welcome') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-md space-y-6 text-center fade-in">
+          <div className="text-6xl">🎉</div>
+          <div className="space-y-2">
+            <h2 className="font-black text-gray-900 text-2xl" style={{fontFamily:'Montserrat'}}>You're in!</h2>
+            <p className="text-gray-600">
+              Welcome, <span className="font-bold text-brand-pink">{studentName.trim()}</span>!
+              {teacherName ? <> You just joined <span className="font-bold text-brand-teal">{teacherName}'s</span> class.</> : <> You joined class <span className="font-mono font-bold text-brand-teal">{classCode}</span>.</>}
+            </p>
+            <p className="text-sm text-gray-500">Your lesson progress, moods, and anything you choose to share will now show up on your teacher's dashboard.</p>
+          </div>
+          <button onClick={() => { setStep('done'); onDone(); }} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition">
+            Let's Go →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
@@ -2142,7 +2183,7 @@ const JournalPrompts = ({ isTeacher }) => {
     setTimeout(() => setSavedFlash(false), 2500);
     // Sync to Firebase
     if (FB_ENABLED) {
-      const code = localStorage.getItem('sv_class_code');
+      const code = getClassCode();
       const sid = getStudentId();
       if (code && code !== 'SOLO') {
         const allMoods = updatedEntries.filter(e => e.mood != null).map(e => ({date: e.date, mood: e.mood, note: e.aiLog || ''}));
@@ -2482,8 +2523,9 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
   const updateAI = (field, val) => setAiCite(p => ({...p, [field]:val}));
   const [showAILog, setShowAILog] = useState(false);
 
+  const MIN_REFL_SENTENCES = 4;
   const sentCount = reflection.split(/[.!?]+/).filter(s=>s.trim().length>5).length;
-  const reflValid = sentCount >= 9;
+  const reflValid = sentCount >= MIN_REFL_SENTENCES;
 
   const sNotesHasContent = Object.values(sNotes).some(v => v && v.trim());
   const aiLogComplete = usedAI === false || (usedAI === true && Object.values(aiCite).every(v => v && v.trim()));
@@ -2647,7 +2689,8 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
 
         {/* Procedure */}
         <section>
-          <h3 className="card-title mb-3">{isStudent?'Activities':'Procedure'}</h3>
+          <h3 className="card-title mb-1">{isStudent?'Activities':'Procedure'}</h3>
+          {isStudent && <p className="text-xs text-gray-400 mb-3">Here's what we'll do for this lesson. Check off each step as you finish it.</p>}
           <div className="space-y-6">
             {lesson.procedure.map((p,pi)=>(
               <div key={pi} className="border-l-2 border-pink-100 pl-4">
@@ -2659,7 +2702,7 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
                       <div key={si} onClick={()=>isStudent&&setSteps2(prev=>({...prev,[sk]:!prev[sk]}))}
                         className={`flex items-start gap-3 p-2 rounded transition ${isStudent?'cursor-pointer hover:bg-gray-50':''} ${steps[sk]?'opacity-50':''}`}>
                         {isStudent&&<div className={`mt-0.5 w-4 h-4 rounded-full border flex-shrink-0 transition ${steps[sk]?'bg-brand-teal border-brand-teal':'bg-white border-gray-300'}`}/>}
-                        <p className={`text-sm ${steps[sk]?'text-gray-400 line-through':'text-gray-600'}`}>{s}</p>
+                        <p className={`text-sm ${steps[sk]?'text-gray-400 line-through':'text-gray-600'}`}>{isStudent ? toStudentVoice(s) : s}</p>
                       </div>
                     );
                   })}
@@ -2676,13 +2719,13 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
             <p className="font-medium text-gray-700 mb-4">{lesson.comprehensionQuestion}</p>
             <div className="relative">
               <textarea value={reflection} onChange={e=>setReflection(e.target.value)}
-                placeholder="Reflect deeply... (9 sentences required to complete)" rows={9}
+                placeholder={`Reflect deeply... (${MIN_REFL_SENTENCES} sentences required to complete)`} rows={9}
                 className="w-full p-5 rounded-xl border-2 border-white bg-white/80 focus:bg-white focus:ring-4 focus:ring-pink-100 focus:outline-none transition leading-relaxed text-gray-800"/>
               <div className={`absolute bottom-4 right-4 px-3 py-1 rounded-full text-xs font-bold ${reflValid?'bg-brand-teal text-white':'bg-brand-pink text-white pulse'}`}>
-                {sentCount} / 9 Sentences
+                {sentCount} / {MIN_REFL_SENTENCES} Sentences
               </div>
             </div>
-            {!reflValid&&<p className="mt-2 text-xs text-brand-pink font-semibold uppercase tracking-wider">Keep writing! You need at least 9 sentences to complete this lesson.</p>}
+            {!reflValid&&<p className="mt-2 text-xs text-brand-pink font-semibold uppercase tracking-wider">Keep writing! You need at least {MIN_REFL_SENTENCES} sentences to complete this lesson.</p>}
             {reflValid&&!done&&(
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-2 text-brand-teal font-bold">⭐ Reflection complete! You're ready to mark this lesson done.</div>
@@ -2703,7 +2746,7 @@ const LessonViewer = ({ lesson, isStudent, isTeacher }) => {
                   }
                   // Sync lesson completion to Firebase
                   if (FB_ENABLED) {
-                    const code = localStorage.getItem('sv_class_code');
+                    const code = getClassCode();
                     const sid = getStudentId();
                     if (code && code !== 'SOLO') {
                       fbPatch(`sv_classrooms/${code}/students/${sid}/lessons/${safeKey(key)}`, {
@@ -3059,6 +3102,16 @@ const HomeworkSection = ({ lesson, isStudent, isTeacher }) => {
   const hwFilled = hw.what && hw.what.trim();
   const hwComplete = hw.what && hw.insight && hw.effort;
 
+  // Sync homework completion to the teacher dashboard
+  useEffect(() => {
+    if (!FB_ENABLED || !isStudent || !hwComplete) return;
+    const code = getClassCode();
+    const sid = getStudentId();
+    if (code && code !== 'SOLO') {
+      fbPatch(`sv_classrooms/${code}/students/${sid}/lessons/${safeKey(key)}`, { hwDone: true, hwAt: new Date().toISOString() });
+    }
+  }, [hwComplete]);
+
   // Multiple choice quiz
   const lessonKey = Object.keys(allLessonPlans).find(k => allLessonPlans[k] === lesson) || '';
   const quiz = lessonQuizzes[lessonKey] || [];
@@ -3154,7 +3207,7 @@ const HomeworkSection = ({ lesson, isStudent, isTeacher }) => {
                   setQuizState(p => ({...p, submitted:true}));
                   // Sync quiz score to Firebase
                   if (FB_ENABLED) {
-                    const code = localStorage.getItem('sv_class_code');
+                    const code = getClassCode();
                     const sid = getStudentId();
                     if (code && code !== 'SOLO') {
                       const score = quiz.filter((q,i) => quizState.answers[i] === q.ans).length;
@@ -3358,7 +3411,7 @@ const TeacherClassManager = () => {
         <div className="flex flex-col gap-2">
           <button onClick={copyCode} className="bg-white text-brand-teal font-bold px-4 py-2 rounded-xl text-sm hover:opacity-90 transition">Copy Code</button>
           <button onClick={() => loadStudents(myCode)} className="bg-white/20 text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-white/30 transition">
-            {loading ? 'Refreshing...' : 'Refresh'}
+            {loading ? 'Refreshing...' : '↻ Refresh Roster'}
           </button>
         </div>
       </div>
@@ -3392,6 +3445,8 @@ const TeacherClassManager = () => {
               const avgMood = recentMoods.length ? Math.round(recentMoods.reduce((s,m)=>s+(m.mood||3),0)/recentMoods.length) : null;
               const flaggedMoods = (Array.isArray(moods) ? moods : Object.values(moods)).filter(m => m.mood != null && m.mood <= 2);
               const sharedJournal = (Array.isArray(journal) ? journal : Object.values(journal)).filter(j => j.shared);
+              const quizLessons = Object.entries(lessons).filter(([,v]) => v.quizScore != null);
+              const hwLessons = Object.entries(lessons).filter(([,v]) => v.hwDone);
               const moodObj = avgMood ? getMood(avgMood) : null;
               const isSelected = selectedStudent === sid;
 
@@ -3440,6 +3495,32 @@ const TeacherClassManager = () => {
                         )}
                       </div>
 
+                      {/* Knowledge check scores */}
+                      {quizLessons.length > 0 && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Knowledge Checks ({quizLessons.length})</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {quizLessons.map(([k,v])=>(
+                              <span key={k} className={`text-xs px-2 py-0.5 rounded-full font-bold ${v.quizScore === v.quizTotal ? 'bg-green-100 text-green-700' : v.quizScore >= Math.ceil((v.quizTotal||3)*0.6) ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
+                                {k.replace(/_/g,' ')}: {v.quizScore}/{v.quizTotal}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Homework submitted */}
+                      {hwLessons.length > 0 && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Homework Submitted ({hwLessons.length})</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {hwLessons.map(([k])=>(
+                              <span key={k} className="bg-brand-yellow/20 text-yellow-800 text-xs px-2 py-0.5 rounded-full font-medium">✓ {k.replace(/_/g,' ')}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Mood history */}
                       {recentMoods.length > 0 && (
                         <div>
@@ -3483,7 +3564,7 @@ const TeacherClassManager = () => {
                         </div>
                       )}
 
-                      {sharedJournal.length === 0 && recentMoods.length === 0 && doneLessons === 0 && (
+                      {sharedJournal.length === 0 && recentMoods.length === 0 && doneLessons === 0 && quizLessons.length === 0 && hwLessons.length === 0 && (
                         <p className="text-sm text-gray-400 italic text-center py-2">Student has not completed any activities yet.</p>
                       )}
                     </div>
@@ -4216,7 +4297,7 @@ function App() {
     return <RoleSelect onSelect={(r) => {
       if (r === 'student') {
         setRole('student');
-        if (!localStorage.getItem('sv_class_code')) {
+        if (!getClassCode()) {
           setShowEnrollment(true);
         }
       } else if (r === 'homeschool') {
