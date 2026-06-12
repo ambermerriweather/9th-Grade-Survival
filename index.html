@@ -125,6 +125,32 @@ const getClassCode = () => {
   } catch { return null; }
 };
 
+// Hash a 4-digit PIN with SHA-256 (browser crypto, no PII stored)
+const hashPin = async (pin) => {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sv_pin_v1_' + pin));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch { return null; }
+};
+
+// Consecutive-day streak from a list of journal entries
+const getMoodStreak = (entries) => {
+  const days = [...new Set((entries||[]).map(e => (e.date||'').slice(0,10)).filter(Boolean))].sort().reverse();
+  if (!days.length) return 0;
+  const pad = (d) => d.toISOString().slice(0,10);
+  const today = pad(new Date());
+  const yesterday = pad(new Date(Date.now() - 86400000));
+  if (days[0] !== today && days[0] !== yesterday) return 0;
+  let streak = 0, cursor = days[0];
+  for (const d of days) {
+    if (d === cursor) {
+      streak++;
+      cursor = pad(new Date(new Date(cursor+'T12:00:00Z').getTime() - 86400000));
+    } else break;
+  }
+  return streak;
+};
+
 // Rewrites teacher-directed lesson plan language into student-facing language
 const toStudentVoice = (t) => t
   .replace(/\bAsk each student to\b/g, 'Each student will')
@@ -155,6 +181,8 @@ const BrainIcon  = (p) => <Svg {...p} d='<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15
 const CheckCircle= (p) => <Svg {...p} d='<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>'/>;
 const Lightbulb  = (p) => <Svg {...p} d='<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>'/>;
 const Plus       = (p) => <Svg {...p} d='<path d="M5 12h14"/><path d="M12 5v14"/>'/>;
+const HeartIcon  = (p) => <Svg {...p} d='<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/>'/>;
+const XIcon      = (p) => <Svg {...p} d='<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'/>;
 const MailIcon   = (p) => <Svg {...p} d='<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'/>;
 const CalIcon    = (p) => <Svg {...p} d='<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>'/>;
 const AwardIcon  = (p) => <Svg {...p} d='<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>'/>;
@@ -1515,7 +1543,7 @@ You generate the class code from the Teacher Hub under Class Setup. Share it wit
 Have the student open their browser settings, go to Site Data or Storage, and clear data for the app URL. This resets everything on their device. You cannot reset a student remotely.
 
 **What is the teacher password?**
-SVPILOT25 — share this only with co-teachers or instructional coaches, not students.
+Use the teacher access code provided by Scholar Vanguard. Need one? Email hello@scholarsvanguard.com. Share codes only with co-teachers or instructional coaches, never students.
 
 **What is the P.I.L.O.T. Framework?**
 Scholar Vanguard's proprietary five-step AI accountability system. Purpose, Input, Lift, Own It, Transform. It is taught in the AI Literacy lessons (chapters 10 through 12). Introduce it to students before those lessons.
@@ -1605,17 +1633,24 @@ const BackNav = ({ onClick, label = "Back to Dashboard" }) => (
 const StudentEnrollment = ({ onDone }) => {
   const [classCode, setClassCode] = useLS('sv_class_code', '');
   const [studentName, setStudentName] = useLS('sv_student_name', '');
+  // steps: 'enroll' | 'setPin' | 'welcome' | 'return' | 'done'
   const [step, setStep] = useState(classCode ? 'done' : 'enroll');
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [teacherName, setTeacherName] = useState('');
+  const [pin, setPin] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  // For returning student flow
+  const [retCode, setRetCode] = useState('');
+  const [retName, setRetName] = useState('');
+  const [retPin, setRetPin] = useState('');
 
+  // Step 1: verify class code + name, register profile
   const handleJoin = async () => {
     if (!studentName.trim()) { setError('Please enter your name.'); return; }
     const code = classCode.trim().toUpperCase();
     if (!code) { setError('Please enter a class code.'); return; }
-    setVerifying(true);
-    setError('');
+    setVerifying(true); setError('');
     if (FB_ENABLED) {
       const info = await fbRead(`sv_classrooms/${code}/info`);
       if (!info) { setError('Class code not found. Check with your teacher.'); setVerifying(false); return; }
@@ -1627,68 +1662,172 @@ const StudentEnrollment = ({ onDone }) => {
     }
     setClassCode(code);
     setVerifying(false);
-    if (FB_ENABLED) { setStep('welcome'); } else { setStep('done'); onDone(); }
+    if (FB_ENABLED) { setStep('setPin'); } else { setStep('done'); onDone(); }
   };
 
-  const handleSolo = () => {
-    setClassCode('SOLO');
-    onDone();
+  // Step 2: save PIN hash
+  const handleSetPin = async () => {
+    if (!/^\d{4}$/.test(pin)) { setError('PIN must be exactly 4 digits.'); return; }
+    if (pin !== pinConfirm) { setError('PINs do not match. Try again.'); return; }
+    setVerifying(true); setError('');
+    const hash = await hashPin(pin);
+    if (hash && FB_ENABLED) {
+      const code = getClassCode();
+      const sid = getStudentId();
+      await fbWrite(`sv_classrooms/${code}/students/${sid}/credentials`, { pinHash: hash });
+    }
+    setVerifying(false);
+    setStep('welcome');
   };
+
+  // Returning student: match by name + PIN, restore studentId
+  const handleReturn = async () => {
+    const code = retCode.trim().toUpperCase();
+    const name = retName.trim();
+    if (!code || !name || !/^\d{4}$/.test(retPin)) {
+      setError('Enter your class code, first name, and 4-digit PIN.'); return;
+    }
+    setVerifying(true); setError('');
+    const students = await fbRead(`sv_classrooms/${code}/students`);
+    if (!students) { setError('Class not found. Check your class code.'); setVerifying(false); return; }
+    const hash = await hashPin(retPin);
+    const match = Object.entries(students).find(([, s]) => {
+      const profileName = (s.profile?.name || '').trim().toLowerCase();
+      return profileName === name.toLowerCase() && s.credentials?.pinHash === hash;
+    });
+    if (!match) { setError('No match found. Check your name and PIN, or ask your teacher.'); setVerifying(false); return; }
+    const [foundId] = match;
+    // Restore this device to the found student record
+    localStorage.setItem('sv_student_id', foundId);
+    setClassCode(code);
+    setStudentName(match[1].profile?.name || name);
+    await fbPatch(`sv_classrooms/${code}/students/${foundId}/profile`, { lastActive: new Date().toISOString() });
+    setVerifying(false);
+    setStep('done'); onDone();
+  };
+
+  const handleSolo = () => { setClassCode('SOLO'); onDone(); };
 
   if (step === 'done') { onDone(); return null; }
 
-  if (step === 'welcome') {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-md space-y-6 text-center fade-in">
-          <div className="text-6xl">🎉</div>
-          <div className="space-y-2">
-            <h2 className="font-black text-gray-900 text-2xl" style={{fontFamily:'Montserrat'}}>You're in!</h2>
-            <p className="text-gray-600">
-              Welcome, <span className="font-bold text-brand-pink">{studentName.trim()}</span>!
-              {teacherName ? <> You just joined <span className="font-bold text-brand-teal">{teacherName}'s</span> class.</> : <> You joined class <span className="font-mono font-bold text-brand-teal">{classCode}</span>.</>}
-            </p>
-            <p className="text-sm text-gray-500">Your lesson progress, moods, and anything you choose to share will now show up on your teacher's dashboard.</p>
-          </div>
-          <button onClick={() => { setStep('done'); onDone(); }} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition">
-            Let's Go →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
+  const wrap = (children) => (
     <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{background:'linear-gradient(135deg,#fff0f5 0%,#f0fafa 100%)'}}>
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-md space-y-6">
-        <div className="text-center space-y-1">
-          <div className="bg-brand-pink text-white rounded-2xl w-12 h-12 flex items-center justify-center font-bold text-2xl mx-auto" style={{fontFamily:'Montserrat'}}>9</div>
-          <h2 className="font-black text-gray-900 text-xl mt-3" style={{fontFamily:'Montserrat'}}>Join Your Class</h2>
-          <p className="text-sm text-gray-500">Your teacher gave you a 6-character class code. Enter it below so your progress is shared with your teacher.</p>
-        </div>
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>}
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Your Name</label>
-            <input value={studentName} onChange={e=>setStudentName(e.target.value)} placeholder="First name or nickname" className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-teal" />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Class Code</label>
-            <input value={classCode} onChange={e=>setClassCode(e.target.value.toUpperCase())} placeholder="e.g. ABC123" maxLength={6} className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest uppercase focus:outline-none focus:border-brand-teal" />
-          </div>
-        </div>
-        <button onClick={handleJoin} disabled={verifying} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50">
-          {verifying ? 'Verifying...' : 'Join Class'}
-        </button>
-        <button onClick={handleSolo} className="w-full text-gray-400 text-sm underline hover:text-gray-600">
-          Skip — study on my own (no class code)
-        </button>
-        {!FB_ENABLED && (
-          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 text-center">Firebase not configured yet. Your progress will save locally only.</p>
-        )}
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-md space-y-6 fade-in">
+        {children}
       </div>
     </div>
   );
+
+  if (step === 'welcome') return wrap(<>
+    <div className="text-center space-y-2">
+      <div className="text-6xl">🎉</div>
+      <h2 className="font-black text-gray-900 text-2xl" style={{fontFamily:'Montserrat'}}>You're in!</h2>
+      <p className="text-gray-600">
+        Welcome, <span className="font-bold text-brand-pink">{studentName.trim()}</span>!
+        {teacherName ? <> You joined <span className="font-bold text-brand-teal">{teacherName}'s</span> class.</> : <> Class <span className="font-mono font-bold text-brand-teal">{classCode}</span>.</>}
+      </p>
+      <p className="text-sm text-gray-500">Your lesson progress, moods, and anything you choose to share will show on your teacher's dashboard.</p>
+    </div>
+    <button onClick={() => { setStep('done'); onDone(); }} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition">
+      Let's Go →
+    </button>
+  </>);
+
+  if (step === 'setPin') return wrap(<>
+    <div className="text-center space-y-1">
+      <div className="text-4xl mb-1">🔐</div>
+      <h2 className="font-black text-gray-900 text-xl" style={{fontFamily:'Montserrat'}}>Set Your PIN</h2>
+      <p className="text-sm text-gray-500">Create a 4-digit PIN so you can sign back in from any device. No email required.</p>
+    </div>
+    {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>}
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">4-Digit PIN</label>
+        <input type="password" inputMode="numeric" maxLength={4} value={pin} onChange={e=>{ setPin(e.target.value.replace(/\D/g,'')); setError(''); }}
+          placeholder="••••" className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest text-center text-xl focus:outline-none focus:border-brand-teal"/>
+      </div>
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Confirm PIN</label>
+        <input type="password" inputMode="numeric" maxLength={4} value={pinConfirm} onChange={e=>{ setPinConfirm(e.target.value.replace(/\D/g,'')); setError(''); }}
+          placeholder="••••" className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest text-center text-xl focus:outline-none focus:border-brand-teal"/>
+      </div>
+    </div>
+    <button onClick={handleSetPin} disabled={verifying} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50">
+      {verifying ? 'Saving…' : 'Save PIN & Continue →'}
+    </button>
+    <button onClick={() => setStep('welcome')} className="w-full text-gray-400 text-sm underline hover:text-gray-600">
+      Skip for now
+    </button>
+    <p className="text-center text-xs text-gray-400">Your PIN is hashed — we never store the digits themselves.</p>
+  </>);
+
+  if (step === 'return') return wrap(<>
+    <div className="text-center space-y-1">
+      <div className="text-3xl mb-1">👋</div>
+      <h2 className="font-black text-gray-900 text-xl" style={{fontFamily:'Montserrat'}}>Welcome Back</h2>
+      <p className="text-sm text-gray-500">Enter your class code, first name, and PIN to reconnect your progress on this device.</p>
+    </div>
+    {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>}
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Class Code</label>
+        <input value={retCode} onChange={e=>{ setRetCode(e.target.value.toUpperCase()); setError(''); }} placeholder="ABC123" maxLength={6}
+          className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest uppercase focus:outline-none focus:border-brand-teal"/>
+      </div>
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">First Name (as you enrolled)</label>
+        <input value={retName} onChange={e=>{ setRetName(e.target.value); setError(''); }} placeholder="Your name"
+          className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-teal"/>
+      </div>
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Your 4-Digit PIN</label>
+        <input type="password" inputMode="numeric" maxLength={4} value={retPin} onChange={e=>{ setRetPin(e.target.value.replace(/\D/g,'')); setError(''); }}
+          placeholder="••••" className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest text-center text-xl focus:outline-none focus:border-brand-teal"/>
+      </div>
+    </div>
+    <button onClick={handleReturn} disabled={verifying} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50">
+      {verifying ? 'Looking you up…' : 'Reconnect My Progress →'}
+    </button>
+    <button onClick={() => { setStep('enroll'); setError(''); }} className="w-full text-gray-400 text-sm underline hover:text-gray-600">
+      ← I'm new — join a class instead
+    </button>
+  </>);
+
+  // Default: enroll
+  return wrap(<>
+    <div className="text-center space-y-1">
+      <div className="bg-brand-pink text-white rounded-2xl w-12 h-12 flex items-center justify-center font-bold text-2xl mx-auto" style={{fontFamily:'Montserrat'}}>9</div>
+      <h2 className="font-black text-gray-900 text-xl mt-3" style={{fontFamily:'Montserrat'}}>Join Your Class</h2>
+      <p className="text-sm text-gray-500">Your teacher gave you a 6-character class code. Enter it below to connect your progress.</p>
+    </div>
+    {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>}
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Your Name</label>
+        <input value={studentName} onChange={e=>{ setStudentName(e.target.value); setError(''); }} placeholder="First name or nickname"
+          className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-teal"/>
+      </div>
+      <div>
+        <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Class Code</label>
+        <input value={classCode} onChange={e=>{ setClassCode(e.target.value.toUpperCase()); setError(''); }} placeholder="e.g. ABC123" maxLength={6}
+          className="w-full mt-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono tracking-widest uppercase focus:outline-none focus:border-brand-teal"/>
+      </div>
+    </div>
+    <button onClick={handleJoin} disabled={verifying} className="w-full bg-brand-teal text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50">
+      {verifying ? 'Verifying...' : 'Join Class'}
+    </button>
+    <div className="flex flex-col gap-2 pt-1">
+      <button onClick={() => { setStep('return'); setError(''); }} className="w-full text-brand-teal text-sm font-semibold underline hover:opacity-70">
+        Returning student on a new device? Sign back in →
+      </button>
+      <button onClick={handleSolo} className="w-full text-gray-400 text-sm underline hover:text-gray-600">
+        Skip — study on my own (no class code)
+      </button>
+    </div>
+    {!FB_ENABLED && (
+      <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 text-center">Firebase not configured. Progress saves locally only.</p>
+    )}
+  </>);
 };
 
 /* ── ROLE SELECT + TEACHER LOGIN ─────────────────────────────────────── */
@@ -1774,10 +1913,21 @@ const RoleSelect = ({ onSelect }) => (
 
 const TeacherLogin = ({ onSuccess, onBack }) => {
   const [code, setCode] = useState('');
-  const [err, setErr] = useState(false);
-  const submit = () => {
-    if (code.trim().toUpperCase() === 'SVPILOT25') { onSuccess(); }
-    else { setErr(true); setCode(''); }
+  const [err, setErr] = useState('');
+  const [checking, setChecking] = useState(false);
+  const submit = async () => {
+    const entered = code.trim().toUpperCase();
+    if (!entered) { setErr('Please enter your access code.'); return; }
+    setChecking(true);
+    const codes = await fbRead('sv_admin/teacherCodes');
+    setChecking(false);
+    if (!codes || typeof codes !== 'object') {
+      setErr('Could not verify your access code right now. Check your connection and try again, or email hello@scholarsvanguard.com.');
+      return;
+    }
+    const ok = !!(codes[entered] && codes[entered].active !== false);
+    if (ok) { onSuccess(); }
+    else { setErr('Incorrect code. Please try again.'); setCode(''); }
   };
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{background:'linear-gradient(135deg,#f0fafa 0%,#fff0f5 100%)'}}>
@@ -1794,9 +1944,9 @@ const TeacherLogin = ({ onSuccess, onBack }) => {
             placeholder="Access code..."
             className={`w-full p-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-100 transition ${err?'border-red-400':'border-gray-200 focus:border-brand-teal'}`}
             autoFocus/>
-          {err&&<p className="text-xs text-red-500 font-medium">Incorrect code. Please try again.</p>}
-          <button onClick={submit} className="w-full bg-brand-teal text-white py-3 rounded-xl font-bold hover:opacity-90 transition">
-            Enter Teacher Hub
+          {err&&<p className="text-xs text-red-500 font-medium">{err}</p>}
+          <button onClick={submit} disabled={checking} className="w-full bg-brand-teal text-white py-3 rounded-xl font-bold hover:opacity-90 transition disabled:opacity-60">
+            {checking ? 'Checking…' : 'Enter Teacher Hub'}
           </button>
           <button onClick={onBack} className="w-full text-gray-400 text-sm hover:text-gray-600 transition py-1">
             ← Back to role select
@@ -2142,6 +2292,32 @@ const ProjectChunker = () => {
   );
 };
 
+/* ── CRISIS SUPPORT CARD ─────────────────────────────────────────────── */
+// Informational only. Never blocks saving. Shown when a student logs a low
+// mood, and reachable any time via the "Need support?" link on the dashboard.
+const CrisisSupportCard = ({ onDismiss }) => (
+  <div className="rounded-2xl p-4 fade-in relative" style={{background:'#f3f0fb', border:'1px solid #e2daf5'}}>
+    {onDismiss && (
+      <button onClick={onDismiss} aria-label="Dismiss"
+        className="absolute top-3 right-3 text-purple-400 hover:text-purple-600 transition">
+        <XIcon size={16}/>
+      </button>
+    )}
+    <div className="flex items-start gap-3">
+      <HeartIcon size={22} cls="text-purple-500 flex-shrink-0 mt-0.5"/>
+      <div className="space-y-2 pr-5">
+        <h3 className="font-bold text-purple-900" style={{fontFamily:'Montserrat'}}>Rough stretch? You're not alone.</h3>
+        <p className="text-sm text-purple-900/80">If things feel heavy, you deserve support, right now if you need it.</p>
+        <ul className="space-y-1.5 text-sm text-purple-900/80">
+          <li className="flex gap-2"><span className="text-purple-400 flex-shrink-0">•</span> Call or text 988, the Suicide and Crisis Lifeline. Free, confidential, 24/7.</li>
+          <li className="flex gap-2"><span className="text-purple-400 flex-shrink-0">•</span> Text HOME to 741741 to reach the Crisis Text Line.</li>
+          <li className="flex gap-2"><span className="text-purple-400 flex-shrink-0">•</span> Or talk to your school counselor or another trusted adult.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+);
+
 const JournalPrompts = ({ isTeacher }) => {
   const [entries, setEntries] = useLS('journal', []);
   const [content, setContent] = useState('');
@@ -2151,6 +2327,7 @@ const JournalPrompts = ({ isTeacher }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [shareWithTeacher, setShareWithTeacher] = useState(false);
+  const [crisisDismissed, setCrisisDismissed] = useState(false);
 
   const MIN_SENTENCES = 3;
   const PROMPT = "What is one thing you learned about your learning this week?";
@@ -2188,7 +2365,7 @@ const JournalPrompts = ({ isTeacher }) => {
       const sid = getStudentId();
       if (code && code !== 'SOLO') {
         const allMoods = updatedEntries.filter(e => e.mood != null).map(e => ({date: e.date, mood: e.mood, note: e.aiLog || ''}));
-        const allJournal = updatedEntries.map(e => ({date: e.date, text: e.content || e.text || '', mood: e.mood, shared: e.shared || false}));
+        const allJournal = updatedEntries.filter(e => e.shared).map(e => ({date: e.date, text: e.content || e.text || '', mood: e.mood, shared: e.shared || false}));
         fbWrite(`sv_classrooms/${code}/students/${sid}/moods`, allMoods);
         fbWrite(`sv_classrooms/${code}/students/${sid}/journal`, allJournal);
         fbPatch(`sv_classrooms/${code}/students/${sid}/profile`, {lastActive: new Date().toISOString()});
@@ -2393,7 +2570,7 @@ const JournalPrompts = ({ isTeacher }) => {
             </div>
             <div className="flex gap-2">
               {MOODS.map(m => (
-                <button key={m.val} onClick={() => setMood(mood === m.val ? null : m.val)} title={m.label}
+                <button key={m.val} onClick={() => { const nv = mood === m.val ? null : m.val; setMood(nv); if (nv === 1 || nv === 2) setCrisisDismissed(false); }} title={m.label}
                   className={`flex-1 py-2 rounded-xl border-2 text-center transition text-lg ${mood === m.val ? `${m.bg} ${m.border}` : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>
                   {m.emoji}
                   <div className={`text-[9px] font-bold mt-0.5 ${mood === m.val ? m.text : 'text-gray-400'}`}>{m.label}</div>
@@ -2402,6 +2579,9 @@ const JournalPrompts = ({ isTeacher }) => {
             </div>
             {!mood && suggestedMood && (
               <p className="text-[10px] text-gray-400">No selection = Smart Detection will be used ({getMood(suggestedMood).emoji} {getMood(suggestedMood).label})</p>
+            )}
+            {(mood === 1 || mood === 2) && !crisisDismissed && (
+              <CrisisSupportCard onDismiss={() => setCrisisDismissed(true)} />
             )}
           </div>
           {/* Share with teacher checkbox */}
@@ -3349,8 +3529,12 @@ const TeacherClassManager = () => {
     setCreating(true);
     const code = genClassCode();
     if (FB_ENABLED) {
+      const createdAt = new Date().toISOString();
       await fbWrite(`sv_classrooms/${code}/info`, {
-        teacherName: teacherName.trim(), createdAt: new Date().toISOString(), classCode: code
+        teacherName: teacherName.trim(), createdAt, classCode: code
+      });
+      await fbWrite(`sv_admin/classroomIndex/${code}`, {
+        teacherName: teacherName.trim(), createdAt
       });
     }
     setMyCode(code);
@@ -4122,6 +4306,95 @@ const FounderBioPage = () => (
   </div>
 );
 
+/* ── WHO SEES WHAT — STUDENT PRIVACY PAGE ───────────────────────────── */
+const PrivacyPage = ({ onBack }) => (
+  <div className="max-w-2xl mx-auto space-y-8 fade-in">
+    <div>
+      {onBack && <BackNav onClick={onBack} label="Back to Student Hub"/>}
+      <div className="rounded-3xl p-8 mt-4 space-y-2" style={{background:'linear-gradient(135deg,#f0fafa 0%,#fff0f5 100%)'}}>
+        <p className="text-xs font-bold tracking-widest uppercase text-brand-teal">Your Privacy</p>
+        <h1 className="text-2xl font-black text-gray-900" style={{fontFamily:'Montserrat'}}>Who Sees What</h1>
+        <p className="text-gray-500 text-sm">A plain-English breakdown of where your data goes — and where it doesn't.</p>
+      </div>
+    </div>
+
+    {[
+      {
+        emoji: '🔒',
+        title: 'Private journal entries',
+        who: 'Only you',
+        color: 'bg-green-50 border-green-200',
+        tagColor: 'bg-green-100 text-green-800',
+        lines: [
+          'When you write a journal entry and leave "Share with teacher" unchecked, it stays on this device only.',
+          'It is never uploaded to any server — not Firebase, not Scholar Vanguard, nobody.',
+          'If you clear your browser or switch devices without using the return-to-class PIN flow, that entry is gone. Download it first if it matters to you.',
+        ]
+      },
+      {
+        emoji: '👩‍🏫',
+        title: 'Shared entries and mood check-ins',
+        who: 'You + your teacher',
+        color: 'bg-teal-50 border-teal-200',
+        tagColor: 'bg-brand-teal/10 text-brand-teal',
+        lines: [
+          'When you check "Share this entry with my teacher," only that entry is uploaded to your classroom on Firebase.',
+          'Your mood rating (1–5) and any mood note are also shared with your teacher so they can support you.',
+          'Your teacher sees: your name, lesson progress, shared journal entries, and mood history.',
+          'No other teacher, no other student, and no other person can see this — it is locked to your class code.',
+        ]
+      },
+      {
+        emoji: '📊',
+        title: 'Lesson progress and quiz scores',
+        who: 'You + your teacher',
+        color: 'bg-teal-50 border-teal-200',
+        tagColor: 'bg-brand-teal/10 text-brand-teal',
+        lines: [
+          'When you complete a lesson or submit a knowledge check, that result syncs to your teacher's roster.',
+          'Your teacher sees which lessons you've finished and how you scored — the same way they'd see a grade in a grade book.',
+        ]
+      },
+      {
+        emoji: '🚫',
+        title: 'What Scholar Vanguard never collects',
+        who: 'Nobody',
+        color: 'bg-gray-50 border-gray-200',
+        tagColor: 'bg-gray-200 text-gray-700',
+        lines: [
+          'No email address. No phone number. No government ID. No social media.',
+          'No tracking pixels, no ad networks, no analytics sold to third parties.',
+          'Your PIN is stored as a one-way hash — the actual digits are never saved anywhere.',
+          'Scholar Vanguard does not sell, share, or rent any student data. Ever.',
+        ]
+      },
+    ].map(({ emoji, title, who, color, tagColor, lines }) => (
+      <div key={title} className={`rounded-2xl border p-6 space-y-3 ${color}`}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-2xl">{emoji}</span>
+          <div className="flex-1">
+            <h2 className="font-black text-gray-900 text-base">{title}</h2>
+          </div>
+          <span className={`text-xs font-bold px-3 py-1 rounded-full ${tagColor}`}>{who}</span>
+        </div>
+        <ul className="space-y-2">
+          {lines.map((l, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+              <span className="mt-0.5 flex-shrink-0 text-gray-400">•</span>
+              {l}
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))}
+
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center space-y-2">
+      <p className="font-bold text-gray-800 text-sm">Questions about your data?</p>
+      <p className="text-gray-500 text-sm">Email us at <a href="mailto:hello@scholarsvanguard.com" className="text-brand-teal underline font-semibold">hello@scholarsvanguard.com</a> and we will respond within 48 hours.</p>
+    </div>
+  </div>
+);
+
 const ContactPage = () => (
   <div className="max-w-4xl mx-auto space-y-10 fade-in">
 
@@ -4314,7 +4587,7 @@ const HomeschoolHub = ({ navigate, switchRole }) => {
         <h2 className="font-black text-gray-900 text-base" style={{fontFamily:'Montserrat'}}>How This Works for Homeschool Families</h2>
         <ul className="space-y-2 text-sm text-gray-700">
           <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> All lessons are self-paced — no bell schedule, no deadlines unless you set them</li>
-          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> Parents can access the Teacher Hub using password <strong>SVPILOT25</strong> to monitor progress</li>
+          <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> Parents can request Teacher Hub access at hello@scholarsvanguard.com</li>
           <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> The Michigan Track is especially relevant — covers credits, dual enrollment, CLEP, and college selection for Michigan students</li>
           <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> Journal entries stay private on this device unless you choose to share them</li>
           <li className="flex gap-2"><span className="text-brand-teal font-bold flex-shrink-0">✓</span> No class code required — but parents can generate one from the Teacher Hub to enable progress tracking</li>
@@ -4404,12 +4677,218 @@ const HomeschoolHub = ({ navigate, switchRole }) => {
   );
 };
 
+/* ── ADMIN DASHBOARD (hidden, reachable only via #admin) ─────────────── */
+const AdminDashboard = () => {
+  const exit = () => { window.location.hash = ''; };
+  const [authed, setAuthed] = useState(() => { try { return sessionStorage.getItem('sv_admin_authed') === 'true'; } catch { return false; } });
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  const submit = async () => {
+    const entered = code.trim();
+    if (!entered) { setErr(true); return; }
+    setChecking(true);
+    const adminCode = await fbRead('sv_admin/adminCode');
+    setChecking(false);
+    if (typeof adminCode === 'string' && entered === adminCode.trim()) {
+      try { sessionStorage.setItem('sv_admin_authed', 'true'); } catch {}
+      setAuthed(true);
+    } else { setErr(true); setCode(''); }
+  };
+
+  if (!authed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{background:'linear-gradient(135deg,#f0fafa 0%,#fff0f5 100%)'}}>
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full space-y-6 fade-in">
+          <div className="text-center">
+            <TeacherIcon size={40} cls="text-brand-teal mx-auto mb-3"/>
+            <h2 className="section-header">Admin Access</h2>
+            <p className="text-gray-400 text-sm mt-1">Enter the administrator code to continue.</p>
+          </div>
+          <div className="space-y-3">
+            <input type="password" value={code}
+              onChange={e=>{setCode(e.target.value);setErr(false);}}
+              onKeyDown={e=>e.key==='Enter'&&submit()}
+              placeholder="Admin code..."
+              className={`w-full p-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-100 transition ${err?'border-red-400':'border-gray-200 focus:border-brand-teal'}`}
+              autoFocus/>
+            {err&&<p className="text-xs text-red-500 font-medium">Incorrect code. Please try again.</p>}
+            {!FB_ENABLED&&<p className="text-xs text-amber-600 font-medium">Database not configured — admin access is unavailable.</p>}
+            <button onClick={submit} disabled={checking} className="w-full bg-brand-teal text-white py-3 rounded-xl font-bold hover:opacity-90 transition disabled:opacity-60">
+              {checking ? 'Checking…' : 'Enter Admin Dashboard'}
+            </button>
+            <button onClick={exit} className="w-full text-gray-400 text-sm hover:text-gray-600 transition py-1">
+              ← Back to app
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <AdminPanel onExit={exit} />;
+};
+
+const AdminPanel = ({ onExit }) => {
+  const [teacherCodes, setTeacherCodes] = useState({});
+  const [classrooms, setClassrooms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newCode, setNewCode] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const codes = await fbRead('sv_admin/teacherCodes');
+    const idx = await fbRead('sv_admin/classroomIndex');
+    const idxObj = idx && typeof idx === 'object' ? idx : {};
+    const rows = await Promise.all(Object.entries(idxObj).map(async ([cc, info]) => {
+      const studs = await fbRead(`sv_classrooms/${cc}/students`);
+      const studentCount = studs && typeof studs === 'object' ? Object.keys(studs).length : 0;
+      return { code: cc, teacherName: (info && info.teacherName) || '—', createdAt: (info && info.createdAt) || '', studentCount };
+    }));
+    rows.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+    setTeacherCodes(codes && typeof codes === 'object' ? codes : {});
+    setClassrooms(rows);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const toggleActive = async (key) => {
+    const cur = teacherCodes[key] || {};
+    const next = { ...cur, active: cur.active === false ? true : false };
+    setTeacherCodes({ ...teacherCodes, [key]: next });
+    await fbWrite(`sv_admin/teacherCodes/${key}`, next);
+  };
+
+  const addCode = async () => {
+    const c = newCode.trim().toUpperCase();
+    if (!c) return;
+    setAdding(true);
+    const entry = { label: newLabel.trim(), active: true, createdAt: new Date().toISOString() };
+    await fbWrite(`sv_admin/teacherCodes/${c}`, entry);
+    setTeacherCodes(prev => ({ ...prev, [c]: entry }));
+    setNewCode(''); setNewLabel('');
+    setAdding(false);
+  };
+
+  const fmtDate = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }); };
+
+  const codeKeys = Object.keys(teacherCodes);
+  const totalStudents = classrooms.reduce((n, c) => n + c.studentCount, 0);
+  const stats = [
+    { val: classrooms.length, label: 'Classrooms' },
+    { val: codeKeys.length, label: 'Teacher Codes' },
+    { val: totalStudents, label: 'Students' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20">
+      <header className="bg-white shadow-sm sticky top-0 z-20 border-b border-gray-200">
+        <nav className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <span className="bg-brand-teal text-white rounded-lg w-9 h-9 flex items-center justify-center font-bold text-lg" style={{fontFamily:'Montserrat'}}>9</span>
+            <h1 className="text-xl font-semibold text-gray-900" style={{fontFamily:'Montserrat'}}>Admin Dashboard</h1>
+          </div>
+          <button onClick={onExit} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 transition hover:border-gray-300">Exit</button>
+        </nav>
+      </header>
+      <main className="container mx-auto px-4 py-10 max-w-4xl space-y-8">
+        {loading ? (
+          <p className="text-center text-gray-400 text-sm py-10">Loading admin data…</p>
+        ) : (
+        <>
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-4 text-center">
+            {stats.map(s => (
+              <div key={s.label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+                <div className="text-3xl font-black text-brand-teal">{s.val}</div>
+                <div className="text-[11px] text-gray-400 uppercase font-bold mt-1 tracking-wide">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Teacher Access Codes */}
+          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+            <h2 className="section-header">Teacher Access Codes</h2>
+            <div className="space-y-2">
+              {codeKeys.length === 0 && <p className="text-sm text-gray-400">No teacher codes yet.</p>}
+              {codeKeys.map(k => {
+                const c = teacherCodes[k] || {};
+                const active = c.active !== false;
+                return (
+                  <div key={k} className="flex items-center justify-between gap-3 border border-gray-100 rounded-xl px-4 py-3 flex-wrap">
+                    <div className="min-w-0">
+                      <span className="font-bold text-gray-800 font-mono">{k}</span>
+                      {c.label && <span className="text-sm text-gray-500 ml-2">{c.label}</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${active?'bg-brand-teal/10 text-brand-teal':'bg-gray-100 text-gray-400'}`}>{active?'Active':'Inactive'}</span>
+                      <button onClick={() => toggleActive(k)} className="text-xs font-semibold text-brand-teal underline hover:opacity-70 transition">
+                        {active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-bold uppercase text-gray-400 mb-2">Add Code</p>
+              <div className="flex flex-wrap gap-2 items-center">
+                <input value={newCode} onChange={e=>setNewCode(e.target.value)} placeholder="CODE"
+                  className="flex-1 min-w-[120px] p-2.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-brand-teal transition font-mono uppercase"/>
+                <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label (e.g. Spring Cohort)"
+                  className="flex-1 min-w-[160px] p-2.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-brand-teal transition"/>
+                <button onClick={addCode} disabled={adding || !newCode.trim()} className="bg-brand-teal text-white px-4 py-2.5 rounded-xl font-bold hover:opacity-90 transition disabled:opacity-50">
+                  {adding ? 'Adding…' : 'Add'}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Classrooms */}
+          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+            <h2 className="section-header">Classrooms</h2>
+            {classrooms.length === 0 && <p className="text-sm text-gray-400">No classrooms yet.</p>}
+            <div className="space-y-2">
+              {classrooms.map(c => (
+                <div key={c.code} className="flex items-center justify-between gap-3 border border-gray-100 rounded-xl px-4 py-3 flex-wrap">
+                  <div className="min-w-0">
+                    <span className="font-bold text-gray-800 font-mono">{c.code}</span>
+                    <span className="text-sm text-gray-500 ml-2">{c.teacherName}</span>
+                    <span className="text-xs text-gray-400 ml-2">Created {fmtDate(c.createdAt)}</span>
+                  </div>
+                  <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-brand-pink/10 text-brand-pink">{c.studentCount} {c.studentCount === 1 ? 'student' : 'students'}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+        )}
+      </main>
+    </div>
+  );
+};
+
 function App() {
   const [role, setRole] = useLS('hub_role', null);
   const [loginStep, setLoginStep] = useState(null);
   const [page, setPage] = useState('Home');
   const [subPage, setSubPage] = useState(null);
   const [showEnrollment, setShowEnrollment] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
+  const [hash, setHash] = useState(() => { try { return window.location.hash; } catch { return ''; } });
+
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // Hidden admin surface — reachable only via #admin, never linked from nav.
+  if (hash === '#admin') return <AdminDashboard/>;
 
   // Role gate
   if (!role) {
@@ -4473,13 +4952,15 @@ function App() {
         </div>
       ) : null;
       if (!subPage) {
-        const studentJournalCount = (() => { try { return (JSON.parse(localStorage.getItem('journal'))||[]).length; } catch { return 0; } })();
+        const journalEntries = (() => { try { return JSON.parse(localStorage.getItem('journal'))||[]; } catch { return []; } })();
+        const studentJournalCount = journalEntries.length;
         const studentLessonsDone = (() => {
           try {
             return Object.values(allLessonPlans).filter(l => !l.placeholder && JSON.parse(localStorage.getItem(`lesson_done_${l.title.replace(/\s+/g,'_')}`))).length;
           } catch { return 0; }
         })();
         const totalLessons = Object.values(allLessonPlans).filter(l => !l.placeholder).length;
+        const moodStreak = getMoodStreak(journalEntries);
         return (
         <div className="max-w-6xl mx-auto space-y-10">
           {teacherPreviewBanner}
@@ -4488,7 +4969,7 @@ function App() {
             <p className="page-subtitle mt-2">Your complete survival toolkit for 9th grade.</p>
           </div>
           {/* Quick stats */}
-          <div className="grid grid-cols-3 gap-4 text-center max-w-md mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center max-w-2xl mx-auto">
             <div className="bg-white rounded-xl border p-3">
               <div className="text-2xl font-black text-brand-teal">{studentLessonsDone}</div>
               <div className="text-[10px] text-gray-400 uppercase font-bold mt-0.5">Lessons Done</div>
@@ -4501,6 +4982,12 @@ function App() {
               <div className="text-2xl font-black text-gray-300">{totalLessons - studentLessonsDone}</div>
               <div className="text-[10px] text-gray-400 uppercase font-bold mt-0.5">Remaining</div>
             </div>
+            <div className={`rounded-xl border p-3 ${moodStreak > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white'}`}>
+              <div className={`text-2xl font-black ${moodStreak > 0 ? 'text-orange-500' : 'text-gray-300'}`}>
+                {moodStreak > 0 ? `🔥${moodStreak}` : '—'}
+              </div>
+              <div className="text-[10px] text-gray-400 uppercase font-bold mt-0.5">Day Streak</div>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <ToolCard title="Task Planner" icon={CheckCircle} desc="Track your daily and weekly priorities." onClick={() => navigate('StudentHub/TaskPlanner')}/>
@@ -4508,11 +4995,24 @@ function App() {
             <ToolCard title="Habit Tracker" icon={BrainIcon} desc="Build the habits that change your GPA." onClick={() => navigate('StudentHub/HabitTracker')}/>
             <ToolCard title="Project Chunker" icon={ArrowRight} desc="Break big projects into manageable steps." onClick={() => navigate('StudentHub/Chunker')}/>
             <ToolCard title="Journal & AI Log" icon={BookOpen} desc="Reflect, download, and track your thinking." badge={studentJournalCount > 0 ? studentJournalCount : null} onClick={() => navigate('StudentHub/Journal')}/>
-            <ToolCard title="Lesson Library" icon={HandoutIcon} desc={`${studentLessonsDone} of ${totalLessons} lessons complete.`} onClick={() => navigate('StudentHub/Lessons')}/>
+            <ToolCard title="Lesson Library" icon={HandoutIcon} desc={`${studentLessonsDone} of ${totalLessons} lessons complete.`} badge={studentLessonsDone > 0 ? `${studentLessonsDone}✓` : null} onClick={() => navigate('StudentHub/Lessons')}/>
           </div>
-          <div className="text-center no-print">
+          <div className="flex flex-wrap justify-center gap-3 no-print">
             <button onClick={() => navigate('StudentHub/OnePager')} className="inline-flex items-center gap-2 bg-white border border-gray-200 text-brand-teal font-semibold px-5 py-2.5 rounded-xl hover:shadow-md hover:border-brand-teal transition text-sm">
               🖨 Print Student &amp; Parent One-Pager
+            </button>
+            <button onClick={() => navigate('Privacy')} className="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-500 font-semibold px-5 py-2.5 rounded-xl hover:shadow-md hover:border-gray-400 transition text-sm">
+              🔒 Who Sees What
+            </button>
+          </div>
+          {showSupport && (
+            <div className="max-w-md mx-auto">
+              <CrisisSupportCard onDismiss={() => setShowSupport(false)} />
+            </div>
+          )}
+          <div className="text-center no-print">
+            <button onClick={() => setShowSupport(s => !s)} className="text-sm text-purple-500 hover:text-purple-700 underline transition">
+              Need support?
             </button>
           </div>
         </div>
@@ -4613,6 +5113,7 @@ function App() {
 
     if (page === 'Contact') return <ContactPage/>;
     if (page === 'About') return <FounderBioPage/>;
+    if (page === 'Privacy') return <PrivacyPage onBack={() => navigate('StudentHub')}/>;
 
     return <Home navigate={navigate} role={role}/>;
   };
