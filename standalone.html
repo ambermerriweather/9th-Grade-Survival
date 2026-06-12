@@ -200,6 +200,98 @@ const MOODS = [
 ];
 const getMood = (val) => MOODS.find(m => m.val === val) || MOODS[2];
 
+// Phrases that trigger a red language alert in the teacher roster
+const LANGUAGE_ALERT_PHRASES = [
+  "tired of everything","nothing i do","want to disappear","nobody cares",
+  "can't do this anymore","give up","no point","end it","hurt myself",
+  "not worth it","hate myself","what's the point","don't want to be here",
+  "nobody would notice","wish i wasn't","i give up","done with everything",
+  "no one cares","i quit","don't care anymore","nothing matters"
+];
+
+// Returns 'red' (language alert), 'yellow' (mood watch), or null
+const getMoodTier = (moods, journal) => {
+  const allMoods = Array.isArray(moods) ? moods : Object.values(moods || {});
+  const allJournal = Array.isArray(journal) ? journal : Object.values(journal || {});
+  const sharedEntries = allJournal.filter(j => j.shared);
+  const matchesPhrases = (str) => {
+    const s = (str || '').toLowerCase();
+    return s.length > 0 && LANGUAGE_ALERT_PHRASES.some(p => s.includes(p));
+  };
+  const hasLanguageAlert =
+    allMoods.some(m => m.flagged === true) ||
+    allMoods.some(m => matchesPhrases(m.note)) ||
+    sharedEntries.some(j => matchesPhrases(j.text));
+  if (hasLanguageAlert) return 'red';
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentLow = allMoods.filter(m => {
+    const d = new Date(m.date || 0);
+    return d >= sevenDaysAgo && m.mood != null && m.mood <= 2;
+  });
+  if (recentLow.length >= 3) return 'yellow';
+  return null;
+};
+
+// Opens a print window with a counselor referral summary for one student
+const printCounselorSummary = (sid, sdata, myCode, totalLessonsCount) => {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  const profile = sdata.profile || {};
+  const allMoods = (Array.isArray(sdata.moods) ? sdata.moods : Object.values(sdata.moods || {}))
+    .sort((a, b) => (a.date || '') > (b.date || '') ? 1 : -1);
+  const allJournal = Array.isArray(sdata.journal) ? sdata.journal : Object.values(sdata.journal || {});
+  const sharedJournal = allJournal.filter(j => j.shared).sort((a, b) => (b.date || '') > (a.date || '') ? 1 : -1);
+  const flaggedMoods = allMoods.filter(m => m.mood != null && m.mood <= 2);
+  const doneLessons = Object.entries(sdata.lessons || {}).filter(([, v]) => v.done);
+  const careEntries = Object.values(sdata.careLog || {}).sort((a, b) => (b.at || '') > (a.at || '') ? 1 : -1);
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const moodRow = (m) => {
+    const mo = getMood(m.mood);
+    return `<tr><td>${(m.date || '').slice(0, 10)}</td><td>${mo ? mo.emoji + ' ' + mo.label : m.mood}</td><td>${m.note ? m.note : ''}</td></tr>`;
+  };
+
+  win.document.write(`<!DOCTYPE html><html><head><title>Counselor Summary: ${profile.name || 'Student'}</title><style>
+    body{font-family:Georgia,serif;max-width:780px;margin:36px auto;padding:20px;color:#111;font-size:13px}
+    h1{font-size:20px;border-bottom:3px solid #2B7A78;padding-bottom:8px;margin-bottom:4px}
+    h2{font-size:15px;color:#2B7A78;margin:20px 0 6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
+    table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+    th{background:#f3f4f6;border:1px solid #d1d5db;padding:6px 8px;text-align:left;font-weight:700}
+    td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top}
+    .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+    .red{background:#fee2e2;color:#b91c1c}.yellow{background:#fef9c3;color:#854d0e}
+    .meta{font-size:11px;color:#6b7280;margin-bottom:2px}
+    .journal-entry{margin-bottom:10px;padding:8px;border-left:3px solid #2B7A78;background:#f9fafb}
+    .footer{margin-top:32px;padding-top:12px;border-top:1px dashed #d1d5db;font-size:10px;color:#9ca3af;text-align:center}
+    @media print{body{margin:20px}}
+  </style></head><body>
+  <h1>Counselor Referral Summary</h1>
+  <p class="meta">Student: <strong>${profile.name || 'Unknown'}</strong></p>
+  <p class="meta">Class Code: ${myCode || ''} &nbsp;|&nbsp; Generated: ${today}</p>
+  ${getMoodTier(sdata.moods, sdata.journal) === 'red' ? '<span class="badge red">🚨 Language Alert</span>' : ''}
+  ${getMoodTier(sdata.moods, sdata.journal) === 'yellow' ? '<span class="badge yellow">⚠ Mood Watch</span>' : ''}
+
+  <h2>Mood History (All Check-ins)</h2>
+  ${allMoods.length ? `<table><tr><th>Date</th><th>Mood</th><th>Note</th></tr>${allMoods.slice(-20).reverse().map(moodRow).join('')}</table>` : '<p>No mood data.</p>'}
+
+  <h2>Shared Journal Entries (${sharedJournal.length})</h2>
+  ${sharedJournal.length ? sharedJournal.slice(0, 10).map(j => `<div class="journal-entry"><p class="meta">${(j.date || '').slice(0, 10)}</p><p>${j.text ? j.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}</p></div>`).join('') : '<p>No shared journal entries.</p>'}
+
+  <h2>Flags (${flaggedMoods.length} low-mood check-ins)</h2>
+  ${flaggedMoods.length ? `<table><tr><th>Date</th><th>Mood</th><th>Note</th></tr>${flaggedMoods.reverse().map(moodRow).join('')}</table>` : '<p>No flagged moods.</p>'}
+
+  <h2>Lesson Progress (${doneLessons.length} / ${totalLessonsCount} complete)</h2>
+  ${doneLessons.length ? `<ul>${doneLessons.map(([k]) => `<li>${k.replace(/_/g, ' ')}</li>`).join('')}</ul>` : '<p>No lessons completed yet.</p>'}
+
+  <h2>Care Log (${careEntries.length} entries)</h2>
+  ${careEntries.length ? `<table><tr><th>Date</th><th>Action</th></tr>${careEntries.map(e => `<tr><td>${new Date(e.at || '').toLocaleDateString()}</td><td>${e.action || ''}</td></tr>`).join('')}</table>` : '<p>No care log entries.</p>'}
+
+  <div class="footer">Generated by Scholar Vanguard Survival Hub. Shared journal entries only; private entries are never collected.</div>
+  </body></html>`);
+  win.document.close();
+  win.print();
+};
+
 const detectMood = (text) => {
   if (!text || text.trim().length < 30) return null;
   const t = text.toLowerCase();
@@ -3503,6 +3595,120 @@ const HomeworkSection = ({ lesson, isStudent, isTeacher }) => {
   );
 };
 
+/* ── CLASS MOOD TREND CHART ──────────────────────────────────────────── */
+const MoodTrendChart = ({ students }) => {
+  const studentList = Object.values(students);
+  if (!studentList.length) return null;
+
+  const today = new Date();
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (13 - i));
+    return d.toISOString().slice(0, 10);
+  });
+
+  const dayAvgs = days.map(day => {
+    const vals = studentList.flatMap(s => {
+      const m = Array.isArray(s.moods) ? s.moods : Object.values(s.moods || {});
+      return m.filter(e => (e.date || '').slice(0, 10) === day && e.mood != null).map(e => e.mood);
+    });
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  });
+
+  const hasAnyData = dayAvgs.some(v => v != null);
+  if (!hasAnyData) return null;
+
+  const W = 560, H = 150, padL = 28, padR = 12, padT = 12, padB = 24;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const toX = (i) => padL + (i / 13) * chartW;
+  const toY = (val) => padT + chartH - ((val - 1) / 4) * chartH;
+
+  const validPoints = dayAvgs.map((avg, i) => avg != null ? { x: toX(i), y: toY(avg), avg, day: days[i], i } : null).filter(Boolean);
+
+  const studentAvgs = studentList
+    .map(s => {
+      const m = Array.isArray(s.moods) ? s.moods : Object.values(s.moods || {});
+      const recent = m.filter(e => e.mood != null).slice(-14);
+      const avg = recent.length ? recent.reduce((a, b) => a + b.mood, 0) / recent.length : null;
+      return { name: s.profile?.name || 'Student', avg, moods: m };
+    })
+    .filter(s => s.avg != null)
+    .sort((a, b) => a.avg - b.avg)
+    .slice(0, 5);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+      <div>
+        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Class Mood Trend</p>
+        <h3 className="font-black text-gray-900 text-base mt-0.5">14-Day Average Mood</h3>
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{height:'auto',display:'block'}}>
+        {/* Grid lines */}
+        {[1,2,3,4,5].map(v => (
+          <line key={v} x1={padL} y1={toY(v)} x2={W-padR} y2={toY(v)} stroke="#f3f4f6" strokeWidth="1"/>
+        ))}
+        {/* Y axis emoji labels */}
+        {[{v:5,e:'🔥'},{v:3,e:'😐'},{v:1,e:'😞'}].map(({v,e}) => (
+          <text key={v} x={padL-4} y={toY(v)+4} textAnchor="end" fontSize="11" fill="#9ca3af">{e}</text>
+        ))}
+        {/* X axis date labels every ~3 days */}
+        {days.map((day, i) => {
+          if (i !== 0 && i !== 3 && i !== 6 && i !== 9 && i !== 13) return null;
+          return (
+            <text key={day} x={toX(i)} y={H-4} textAnchor="middle" fontSize="9" fill="#9ca3af">
+              {new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{month:'numeric',day:'numeric'})}
+            </text>
+          );
+        })}
+        {/* Teal connecting line */}
+        {validPoints.length > 1 && (
+          <polyline
+            points={validPoints.map(p=>`${p.x},${p.y}`).join(' ')}
+            fill="none" stroke="#2B7A78" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+        )}
+        {/* Dots — red if avg ≤ 2.5 */}
+        {validPoints.map((p, idx) => (
+          <circle key={idx} cx={p.x} cy={p.y} r="5"
+            fill={p.avg <= 2.5 ? '#ef4444' : '#2B7A78'} stroke="white" strokeWidth="2">
+            <title>{p.day}: class avg {p.avg.toFixed(1)}</title>
+          </circle>
+        ))}
+      </svg>
+
+      {/* Sparkline row — 5 lowest avg students */}
+      {studentAvgs.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Students Needing Most Support</p>
+          <div className="space-y-2">
+            {studentAvgs.map(s => {
+              const last7 = s.moods.filter(m => m.mood != null).slice(-7);
+              const spW = 80, spH = 22;
+              const spPts = last7.map((m, i) => ({
+                x: last7.length > 1 ? (i / (last7.length - 1)) * spW : spW / 2,
+                y: spH - ((m.mood - 1) / 4) * spH
+              }));
+              return (
+                <div key={s.name} className="flex items-center gap-3">
+                  <span className="text-xs font-semibold text-gray-700 w-24 truncate flex-shrink-0">{s.name}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${s.avg <= 2 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>{s.avg.toFixed(1)}</span>
+                  {spPts.length > 1 && (
+                    <svg viewBox={`0 0 ${spW} ${spH}`} style={{width:80,height:22,flexShrink:0}}>
+                      <polyline points={spPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
+                        fill="none" stroke={s.avg <= 2.5 ? '#ef4444' : '#2B7A78'} strokeWidth="1.5" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ── TEACHER CLASS MANAGER ───────────────────────────────────────────── */
 const TeacherClassManager = () => {
   const [myCode, setMyCode] = useLS('sv_teacher_class_code', '');
@@ -3512,6 +3718,19 @@ const TeacherClassManager = () => {
   const [creating, setCreating] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [activeCareEntry, setActiveCareEntry] = useState(null);
+
+  const addCareLog = async (sid, action) => {
+    if (!action || !myCode) return;
+    const key = Date.now().toString();
+    const entry = { at: new Date().toISOString(), action };
+    if (FB_ENABLED) await fbPatch(`sv_classrooms/${myCode}/students/${sid}/careLog`, { [key]: entry });
+    setStudents(prev => ({
+      ...prev,
+      [sid]: { ...prev[sid], careLog: { ...(prev[sid]?.careLog || {}), [key]: entry } }
+    }));
+    setActiveCareEntry(null);
+  };
 
   const loadStudents = async (code) => {
     if (!FB_ENABLED || !code) return;
@@ -3580,7 +3799,12 @@ const TeacherClassManager = () => {
     </div>
   );
 
-  const studentList = Object.entries(students);
+  const tierRank = { red: 0, yellow: 1 };
+  const studentList = Object.entries(students).sort(([, a], [, b]) => {
+    const ta = tierRank[getMoodTier(a.moods || [], a.journal || [])] ?? 2;
+    const tb = tierRank[getMoodTier(b.moods || [], b.journal || [])] ?? 2;
+    return ta - tb;
+  });
   const allLessons = Object.values(allLessonPlans).filter(l => !l.placeholder);
   const totalLessonsCount = allLessons.length;
 
@@ -3600,6 +3824,9 @@ const TeacherClassManager = () => {
           </button>
         </div>
       </div>
+
+      {/* Mood trend chart */}
+      {studentList.length > 0 && <MoodTrendChart students={students}/>}
 
       {/* Student roster */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
@@ -3650,8 +3877,11 @@ const TeacherClassManager = () => {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {flaggedMoods.length > 0 && (
-                          <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">⚠ {flaggedMoods.length} flagged</span>
+                        {getMoodTier(moods, journal) === 'red' && (
+                          <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">🚨 Language alert</span>
+                        )}
+                        {getMoodTier(moods, journal) === 'yellow' && (
+                          <span className="bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-1 rounded-full">⚠ Mood watch</span>
                         )}
                         {moodObj && <span className="text-xl" title={`Avg mood: ${moodObj.label}`}>{moodObj.emoji}</span>}
                         <span className="text-gray-300 text-sm">{isSelected ? '▲' : '▼'}</span>
@@ -3752,6 +3982,56 @@ const TeacherClassManager = () => {
                       {sharedJournal.length === 0 && recentMoods.length === 0 && doneLessons === 0 && quizLessons.length === 0 && hwLessons.length === 0 && (
                         <p className="text-sm text-gray-400 italic text-center py-2">Student has not completed any activities yet.</p>
                       )}
+
+                      {/* Care log */}
+                      <div className="border border-gray-200 rounded-xl p-3 space-y-2">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Care Log</p>
+                        {Object.entries(sdata.careLog || {})
+                          .sort(([,a],[,b]) => (b.at||'') > (a.at||'') ? 1 : -1)
+                          .map(([k,entry]) => (
+                            <div key={k} className="flex items-start gap-2 text-xs border-t border-gray-100 pt-2 first:border-0 first:pt-0">
+                              <span className="text-gray-400 flex-shrink-0 w-20">{entry.at ? new Date(entry.at).toLocaleDateString() : ''}</span>
+                              <span className="text-gray-700 font-medium">{entry.action}</span>
+                            </div>
+                          ))}
+                        {activeCareEntry?.sid === sid ? (
+                          <div className="space-y-2 pt-1">
+                            <select
+                              value={activeCareEntry.action}
+                              onChange={e => setActiveCareEntry({...activeCareEntry, action: e.target.value})}
+                              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-brand-teal"
+                            >
+                              <option value="">Select action taken...</option>
+                              <option value="Acknowledged — monitoring">Acknowledged — monitoring</option>
+                              <option value="Spoke with student">Spoke with student</option>
+                              <option value="Counselor notified">Counselor notified</option>
+                              <option value="Parent/guardian contacted">Parent/guardian contacted</option>
+                              <option value="Resolved — no further action needed">Resolved — no further action needed</option>
+                            </select>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => addCareLog(sid, activeCareEntry.action)}
+                                disabled={!activeCareEntry.action}
+                                className="bg-brand-teal text-white text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-40 hover:opacity-90 transition"
+                              >Save</button>
+                              <button onClick={() => setActiveCareEntry(null)} className="text-gray-400 text-xs px-3 py-2 hover:text-gray-600 transition">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setActiveCareEntry({ sid, action: '' })}
+                            className="text-xs text-brand-teal font-bold border border-brand-teal/30 px-3 py-1.5 rounded-xl hover:bg-brand-teal/5 transition"
+                          >+ Acknowledge / Log Action</button>
+                        )}
+                      </div>
+
+                      {/* Counselor summary print button */}
+                      <div className="pt-1 flex justify-end">
+                        <button
+                          onClick={() => printCounselorSummary(sid, sdata, myCode, totalLessonsCount)}
+                          className="text-xs font-bold text-gray-500 border border-gray-200 px-4 py-2 rounded-xl hover:bg-gray-50 transition"
+                        >🖨 Print Counselor Summary</button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -5132,6 +5412,31 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App/>);
+
+/*
+ * ── ROADMAP (future sessions) ──────────────────────────────────────────
+ *
+ * MORNING EMAIL DIGEST
+ *   Daily summary email to teacher: flagged students, class avg mood,
+ *   new check-ins since last digest. Needs a serverless function (Netlify
+ *   Functions + SendGrid). Firebase Cloud Messaging is an alternative.
+ *
+ * GOOGLE CLASSROOM IMPORT
+ *   Let teachers paste a Google Classroom roster CSV or OAuth import to
+ *   pre-populate student names instead of waiting for self-enrollment.
+ *   Store at sv_classrooms/{code}/rosterImport.
+ *
+ * SPANISH / ARABIC LOCALIZATION
+ *   Add i18n strings object keyed by locale ('en', 'es', 'ar').
+ *   Auto-detect browser language; let students override in settings.
+ *   RTL layout support needed for Arabic (dir="rtl" on root element).
+ *
+ * PARENT / GUARDIAN VIEW
+ *   Read-only view scoped to one student (authenticated by student PIN
+ *   plus a separate parent code). Shows lesson progress and aggregate
+ *   mood trend only — never raw journal text. Path: sv_classrooms/{code}/
+ *   students/{id}/parentCode.
+ * ───────────────────────────────────────────────────────────────────── */
 </script>
 </body>
 </html>
