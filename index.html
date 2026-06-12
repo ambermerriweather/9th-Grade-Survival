@@ -245,49 +245,64 @@ const printCounselorSummary = (sid, sdata, myCode, totalLessonsCount) => {
   const doneLessons = Object.entries(sdata.lessons || {}).filter(([, v]) => v.done);
   const careEntries = Object.values(sdata.careLog || {}).sort((a, b) => (b.at || '') > (a.at || '') ? 1 : -1);
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const tier = getMoodTier(sdata.moods, sdata.journal);
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  const moodRow = (m) => {
+  const moodRows = allMoods.slice(-20).reverse().map(function(m) {
     const mo = getMood(m.mood);
-    return `<tr><td>${(m.date || '').slice(0, 10)}</td><td>${mo ? mo.emoji + ' ' + mo.label : m.mood}</td><td>${m.note ? m.note : ''}</td></tr>`;
-  };
+    return '<tr><td>' + (m.date || '').slice(0, 10) + '</td><td>' + (mo ? mo.emoji + ' ' + mo.label : String(m.mood)) + '</td><td>' + esc(m.note) + '</td></tr>';
+  }).join('');
 
-  win.document.write(`<!DOCTYPE html><html><head><title>Counselor Summary: ${profile.name || 'Student'}</title><style>
-    body{font-family:Georgia,serif;max-width:780px;margin:36px auto;padding:20px;color:#111;font-size:13px}
-    h1{font-size:20px;border-bottom:3px solid #2B7A78;padding-bottom:8px;margin-bottom:4px}
-    h2{font-size:15px;color:#2B7A78;margin:20px 0 6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
-    table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
-    th{background:#f3f4f6;border:1px solid #d1d5db;padding:6px 8px;text-align:left;font-weight:700}
-    td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top}
-    .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
-    .red{background:#fee2e2;color:#b91c1c}.yellow{background:#fef9c3;color:#854d0e}
-    .meta{font-size:11px;color:#6b7280;margin-bottom:2px}
-    .journal-entry{margin-bottom:10px;padding:8px;border-left:3px solid #2B7A78;background:#f9fafb}
-    .footer{margin-top:32px;padding-top:12px;border-top:1px dashed #d1d5db;font-size:10px;color:#9ca3af;text-align:center}
-    @media print{body{margin:20px}}
-  </style></head><body>
-  <h1>Counselor Referral Summary</h1>
-  <p class="meta">Student: <strong>${profile.name || 'Unknown'}</strong></p>
-  <p class="meta">Class Code: ${myCode || ''} &nbsp;|&nbsp; Generated: ${today}</p>
-  ${getMoodTier(sdata.moods, sdata.journal) === 'red' ? '<span class="badge red">🚨 Language Alert</span>' : ''}
-  ${getMoodTier(sdata.moods, sdata.journal) === 'yellow' ? '<span class="badge yellow">⚠ Mood Watch</span>' : ''}
+  const journalRows = sharedJournal.slice(0, 10).map(function(j) {
+    return '<div class="journal-entry"><p class="meta">' + (j.date || '').slice(0, 10) + '</p><p>' + esc(j.text) + '</p></div>';
+  }).join('');
 
-  <h2>Mood History (All Check-ins)</h2>
-  ${allMoods.length ? `<table><tr><th>Date</th><th>Mood</th><th>Note</th></tr>${allMoods.slice(-20).reverse().map(moodRow).join('')}</table>` : '<p>No mood data.</p>'}
+  const flagRows = flaggedMoods.slice().reverse().map(function(m) {
+    const mo = getMood(m.mood);
+    return '<tr><td>' + (m.date || '').slice(0, 10) + '</td><td>' + (mo ? mo.emoji + ' ' + mo.label : String(m.mood)) + '</td><td>' + esc(m.note) + '</td></tr>';
+  }).join('');
 
-  <h2>Shared Journal Entries (${sharedJournal.length})</h2>
-  ${sharedJournal.length ? sharedJournal.slice(0, 10).map(j => `<div class="journal-entry"><p class="meta">${(j.date || '').slice(0, 10)}</p><p>${j.text ? j.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}</p></div>`).join('') : '<p>No shared journal entries.</p>'}
+  const lessonItems = doneLessons.map(function(pair) {
+    return '<li>' + pair[0].replace(/_/g, ' ') + '</li>';
+  }).join('');
 
-  <h2>Flags (${flaggedMoods.length} low-mood check-ins)</h2>
-  ${flaggedMoods.length ? `<table><tr><th>Date</th><th>Mood</th><th>Note</th></tr>${flaggedMoods.reverse().map(moodRow).join('')}</table>` : '<p>No flagged moods.</p>'}
+  const careRows = careEntries.map(function(e) {
+    return '<tr><td>' + new Date(e.at || '').toLocaleDateString() + '</td><td>' + esc(e.action) + '</td></tr>';
+  }).join('');
 
-  <h2>Lesson Progress (${doneLessons.length} / ${totalLessonsCount} complete)</h2>
-  ${doneLessons.length ? `<ul>${doneLessons.map(([k]) => `<li>${k.replace(/_/g, ' ')}</li>`).join('')}</ul>` : '<p>No lessons completed yet.</p>'}
+  const css = 'body{font-family:Georgia,serif;max-width:780px;margin:36px auto;padding:20px;color:#111;font-size:13px}'
+    + 'h1{font-size:20px;border-bottom:3px solid #2B7A78;padding-bottom:8px;margin-bottom:4px}'
+    + 'h2{font-size:15px;color:#2B7A78;margin:20px 0 6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px}'
+    + 'table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}'
+    + 'th{background:#f3f4f6;border:1px solid #d1d5db;padding:6px 8px;text-align:left;font-weight:700}'
+    + 'td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top}'
+    + '.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}'
+    + '.red{background:#fee2e2;color:#b91c1c}.yellow{background:#fef9c3;color:#854d0e}'
+    + '.meta{font-size:11px;color:#6b7280;margin-bottom:2px}'
+    + '.je{margin-bottom:10px;padding:8px;border-left:3px solid #2B7A78;background:#f9fafb}'
+    + '.footer{margin-top:32px;padding-top:12px;border-top:1px dashed #d1d5db;font-size:10px;color:#9ca3af;text-align:center}'
+    + '@media print{body{margin:20px}}';
 
-  <h2>Care Log (${careEntries.length} entries)</h2>
-  ${careEntries.length ? `<table><tr><th>Date</th><th>Action</th></tr>${careEntries.map(e => `<tr><td>${new Date(e.at || '').toLocaleDateString()}</td><td>${e.action || ''}</td></tr>`).join('')}</table>` : '<p>No care log entries.</p>'}
+  const html = '<!DOCTYPE html><html><head><title>Counselor Summary</title><style>' + css + '</style></head><body>'
+    + '<h1>Counselor Referral Summary</h1>'
+    + '<p class="meta">Student: <strong>' + esc(profile.name || 'Unknown') + '</strong></p>'
+    + '<p class="meta">Class Code: ' + esc(myCode || '') + ' | Generated: ' + today + '</p>'
+    + (tier === 'red' ? '<span class="badge red">Language Alert</span> ' : '')
+    + (tier === 'yellow' ? '<span class="badge yellow">Mood Watch</span>' : '')
+    + '<h2>Mood History (last 20 check-ins)</h2>'
+    + (moodRows ? '<table><tr><th>Date</th><th>Mood</th><th>Note</th></tr>' + moodRows + '</table>' : '<p>No mood data.</p>')
+    + '<h2>Shared Journal Entries (' + sharedJournal.length + ')</h2>'
+    + (journalRows || '<p>No shared journal entries.</p>')
+    + '<h2>Flags (' + flaggedMoods.length + ' low-mood check-ins)</h2>'
+    + (flagRows ? '<table><tr><th>Date</th><th>Mood</th><th>Note</th></tr>' + flagRows + '</table>' : '<p>No flagged moods.</p>')
+    + '<h2>Lesson Progress (' + doneLessons.length + ' of ' + totalLessonsCount + ' complete)</h2>'
+    + (lessonItems ? '<ul>' + lessonItems + '</ul>' : '<p>No lessons completed yet.</p>')
+    + '<h2>Care Log (' + careEntries.length + ' entries)</h2>'
+    + (careRows ? '<table><tr><th>Date</th><th>Action</th></tr>' + careRows + '</table>' : '<p>No care log entries.</p>')
+    + '<div class="footer">Generated by Scholar Vanguard Survival Hub. Shared journal entries only; private entries are never collected.</div>'
+    + '</body></html>';
 
-  <div class="footer">Generated by Scholar Vanguard Survival Hub. Shared journal entries only; private entries are never collected.</div>
-  </body></html>`);
+  win.document.write(html);
   win.document.close();
   win.print();
 };
@@ -3671,9 +3686,7 @@ const MoodTrendChart = ({ students }) => {
         {/* Dots — red if avg ≤ 2.5 */}
         {validPoints.map((p, idx) => (
           <circle key={idx} cx={p.x} cy={p.y} r="5"
-            fill={p.avg <= 2.5 ? '#ef4444' : '#2B7A78'} stroke="white" strokeWidth="2">
-            <title>{p.day}: class avg {p.avg.toFixed(1)}</title>
-          </circle>
+            fill={p.avg <= 2.5 ? '#ef4444' : '#2B7A78'} stroke="white" strokeWidth="2"/>
         ))}
       </svg>
 
