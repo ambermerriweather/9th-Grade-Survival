@@ -6,3 +6,30 @@
   from = "/*"
   to = "/standalone.html"
   status = 200
+
+# ==========================================================================
+# Priority 1 browser security headers (added for student AI rollout)
+# Applies to every path. The CSP below is tuned to exactly what
+# standalone.html loads today: React + Babel + Tailwind from CDNs,
+# Google Firebase Realtime Database, and Google Fonts.
+#
+# 'unsafe-eval' is REQUIRED here because the app uses in-browser Babel
+# (unpkg.com/@babel/standalone) to compile JSX at runtime. Removing it
+# blanks the page. The long-term hardening (Priority 2) is to precompile
+# JSX in a build step so Babel and 'unsafe-eval' can both be dropped.
+#
+# SAFE TEST FIRST (optional): change the header name on the CSP line from
+# "Content-Security-Policy" to "Content-Security-Policy-Report-Only",
+# deploy, watch the console for a day, then change it back to enforce.
+# The CSP value must stay on one line.
+# ==========================================================================
+[[headers]]
+  for = "/*"
+
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=(), interest-cohort=()"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.tailwindcss.com https://www.gstatic.com https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com; frame-src 'self' https://*.firebaseapp.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
